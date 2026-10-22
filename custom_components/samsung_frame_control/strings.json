@@ -1,0 +1,125 @@
+{
+  "title": "Samsung Frame Control",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect your Frame TV",
+        "description": "Turn the TV on and enter its IP address or hostname. Leave the MAC override blank to look up its MAC automatically from the TV. If Samsung reports the wrong network interface, enter the active interface MAC instead. Keep the default Wake On Lan Broadcast Address unless your network needs a subnet broadcast. Accept HA Frame Control on the TV when prompted.",
+        "data": {
+          "name": "Device name",
+          "host": "TV IP address or hostname",
+          "mac": "MAC address override (optional)",
+          "broadcast_address": "Wake On Lan Broadcast Address"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconnect your Frame TV",
+        "description": "Turn the TV on and allow HA Frame Control when prompted. This updates the address and pairs again, retaining the device and its entities. If authorization is denied, remove HA Frame Control from the TV's external device connection list first.",
+        "data": {
+          "host": "TV IP address or hostname",
+          "broadcast_address": "Wake On Lan Broadcast Address"
+        }
+      },
+      "discovery_confirm": {
+        "title": "Set up your discovered Frame TV",
+        "description": "Check the discovered details, then submit to pair. Turn the TV on and allow HA Frame Control when prompted. Samsung may report a Wi-Fi MAC even on Ethernet: verify this is the MAC of your active interface for Wake-on-LAN, or correct it. Pairing may take up to 65 seconds.",
+        "data": {
+          "name": "Device name",
+          "host": "TV IP address or hostname",
+          "mac": "MAC address override (optional)",
+          "broadcast_address": "Wake On Lan Broadcast Address"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to both remote and Art APIs. Turn the TV on, check port 8002 and the address, and accept any TV authorization prompts. Then retry.",
+      "invalid_auth": "The TV denied authorization. Allow HA Frame Control in the TV's device connection settings and retry.",
+      "invalid_mac": "Enter a valid 12-digit hexadecimal MAC address, for example AA:BB:CC:DD:EE:FF.",
+      "invalid_host": "Enter an IP address or hostname without a URL scheme, path, or port.",
+      "invalid_broadcast": "Enter a valid IPv4 broadcast address. The default is 255.255.255.255.",
+      "mac_unavailable": "Could not obtain a usable MAC from the TV at this address. Turn the TV on and check the host, or enter its active network interface MAC in the override field."
+    },
+    "abort": {
+      "already_configured": "This Frame TV is already configured.",
+      "reconfigure_successful": "Frame TV connection updated.",
+      "not_supported": "This device could not be identified as a supported Samsung Frame TV.",
+      "cannot_connect": "The discovered TV is not responding. Turn it on and wait for discovery, or add Samsung Frame Control manually."
+    },
+    "flow_title": "{name}"
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Samsung Frame Control options",
+        "menu_options": {
+          "inputs": "Input names",
+          "channels": "Channel names",
+          "ip_control_pair": "Pair IP Control (read the current input)",
+          "ip_control_unpair": "Remove IP Control pairing"
+        }
+      },
+      "inputs": {
+        "title": "Input names",
+        "description": "Name the inputs shown in the media player's source list, next to Art Mode. Samsung only publishes the names you set on the TV through its SmartThings cloud, so this integration cannot read them locally. Clear a name to hide that input. Samsung TV is the TV's own source: Samsung TV Plus or the antenna tuner.",
+        "data": {
+          "tv": "Samsung TV",
+          "hdmi1": "HDMI 1",
+          "hdmi2": "HDMI 2",
+          "hdmi3": "HDMI 3",
+          "hdmi4": "HDMI 4"
+        }
+      },
+      "ip_control_pair": {
+        "title": "Pair IP Control",
+        "description": "IP Control is a local Samsung interface that reports the TV's current input, so the media player can show the real source even after you change it with the remote. No cloud service is used.\n\n1. On the TV, turn on Settings > All Settings > Connections > Network > Expert Settings > IP Remote (the menu path can differ by firmware).\n2. Turn the TV on in normal viewing, not Art Mode.\n3. Submit, then accept the prompt on the TV within 40 seconds."
+      },
+      "ip_control_unpair": {
+        "title": "Remove IP Control pairing",
+        "description": "The media player goes back to showing the input last selected in Home Assistant. You can also remove the device from the TV's list of connected devices."
+      },
+      "channels": {
+        "title": "Channel names",
+        "description": "With IP Control paired, the media player shows the channel number while the Samsung TV source is on (for example Samsung TV Plus). The TV does not report channel names locally, so you can add them here, one per line, for example:\n\n2110 = Pluto News\n2111 = Movies\n\nChannels without a name show their number.",
+        "data": {
+          "channel_names": "Channels"
+        }
+      }
+    },
+    "error": {
+      "duplicate_source": "Each visible input needs a different name.",
+      "reserved_source": "\"Art Mode\" is reserved for the Art Mode source.",
+      "ip_control_closed": "The TV is not accepting IP Control connections (ports 1516 and 1515 are closed). Turn on IP Remote on the TV and make sure the TV is on.",
+      "ip_control_timeout": "The TV did not answer. Pairing only works in normal viewing, not Art Mode, and the prompt must be accepted within 40 seconds.",
+      "ip_control_failed": "The TV refused pairing. Accept the prompt on the TV, or remove the old entry from the TV's connected devices list, then try again.",
+      "invalid_channel_line": "Use one channel per line as number = name. This line could not be read: {line}"
+    }
+  },
+  "issues": {
+    "ip_control_unauthorized": {
+      "title": "IP Control pairing for {name} was rejected",
+      "description": "The TV no longer accepts the IP Control token, so the media player cannot show the current input and falls back to the input last selected in Home Assistant. Open Settings > Devices & services > Samsung Frame Control > Configure > Pair IP Control, with the TV on and not in Art Mode."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "activity": {
+        "name": "Activity",
+        "state": {
+          "idle": "Idle",
+          "waking": "Waking TV",
+          "starting_art_app": "Starting Art app",
+          "switching_to_art": "Switching to Art Mode",
+          "switching_to_tv": "Switching to TV mode",
+          "confirming_mode": "Confirming mode",
+          "retrying": "Retrying",
+          "settling": "Waiting for TV",
+          "switching_input": "Switching input",
+          "checking_input": "Checking input",
+          "powering_off": "Powering off",
+          "sending_key": "Sending remote key",
+          "changing_setting": "Changing Art setting"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+# Probe output: tokens and TV reports never belong in the repository.
+tools/frame_ipcontrol_token.json
+tools/frame_probe_*.json
+tools/frame_probe_*.jsonl
+tools/frame_thumbnail_*

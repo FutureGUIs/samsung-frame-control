@@ -1,0 +1,35 @@
+{
+  "domain": "samsung_frame_control",
+  "name": "Samsung Frame Control",
+  "codeowners": [
+    "@FutureGUIs"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "ssdp"
+  ],
+  "documentation": "https://github.com/FutureGUIs/samsung-frame-control",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/FutureGUIs/samsung-frame-control/issues",
+  "requirements": [
+    "samsungtvws==3.0.6"
+  ],
+  "ssdp": [
+    {
+      "st": "urn:samsung.com:device:RemoteControlReceiver:1"
+    },
+    {
+      "st": "urn:samsung.com:service:MainTVAgent2:1"
+    },
+    {
+      "st": "urn:schemas-upnp-org:service:RenderingControl:1",
+      "manufacturer": "Samsung"
+    },
+    {
+      "st": "urn:schemas-upnp-org:service:RenderingControl:1",
+      "manufacturer": "Samsung Electronics"
+    }
+  ],
+  "version": "2.6.1"
+}
