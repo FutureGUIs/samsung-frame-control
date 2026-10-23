@@ -1,3 +1,16 @@
+# Validation for version 2.6.2
+
+Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:
+
+- **247 automated tests passed** (1 new). Reported on the user's TV with
+  2.6.1: on Samsung TV (channel number shown) the media player offered
+  Previous/Next but the dashboard showed only volume. Home Assistant's frontend
+  (`computeMediaControls`) shows Previous/Next only while the state is
+  `playing` or `paused`.
+- Changed tests: Samsung TV with IP Control reports `playing` and offers
+  Previous/Next; HDMI stays `on`; Samsung TV without IP Control (input not
+  observed) stays `on` without channel buttons.
+
 # Validation for version 2.6.1
 
 Executed October 22, 2026, Python 3.14.6, Home Assistant 2026.10.2:

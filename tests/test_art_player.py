@@ -241,7 +241,8 @@ async def test_next_without_slideshow_list_uses_the_catalog(hass, setup, tv):
 async def test_samsung_tv_next_and_previous_change_channel(hass, setup, tv):
     tv.art, tv.ipc_input = "off", "TV"
     await setup(ip_control=True)
-    assert hass.states.get(ENTITY).state == "on"
+    # Playing, so dashboards show Previous/Next (they hide them while "on").
+    assert hass.states.get(ENTITY).state == "playing"
     assert STEP in features(hass)
     assert not features(hass) & SLIDESHOW
     await call(hass, "media_next_track")
@@ -257,9 +258,18 @@ async def test_samsung_tv_next_and_previous_change_channel(hass, setup, tv):
 async def test_hdmi_has_no_transport_buttons(hass, setup, tv):
     tv.art, tv.ipc_input = "off", "HDMI1"
     await setup(ip_control=True)
+    assert hass.states.get(ENTITY).state == "on"
     assert not features(hass) & (STEP | SLIDESHOW)
     with pytest.raises(HomeAssistantError):
         await call(hass, "media_next_track")
     with pytest.raises(HomeAssistantError):
         await call(hass, "media_pause")
     assert tv.keys == []
+
+
+async def test_samsung_tv_unconfirmed_stays_on(hass, setup, tv):
+    # Without IP Control the input is not observed: no channel buttons.
+    tv.art, tv.ipc_input = "off", "TV"
+    await setup()
+    assert hass.states.get(ENTITY).state == "on"
+    assert not features(hass) & STEP

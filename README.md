@@ -118,7 +118,8 @@ What the buttons do depends on the source:
 
 **State:** `off`, `on`, or `unknown` when the TV cannot be observed. In Art
 Mode the state is `playing` while the slideshow runs and `paused` while it is
-off. A TV last seen off stays `off` while it does not answer. The media player
+off; on Samsung TV (with IP Control) it is `playing`, which is what makes
+dashboards show the channel buttons. A TV last seen off stays `off` while it does not answer. The media player
 never becomes unavailable, so Turn on always works.
 
 **Attributes:** `activity` (what a running command is doing), `power_source`

@@ -155,6 +155,10 @@ class FrameMediaPlayer(CoordinatorEntity, RestoreEntity, MediaPlayerEntity):
                 if interval == "off"
                 else MediaPlayerState.PLAYING
             )
+        if self._on_tv_source():
+            # Live TV plays; dashboards only show Previous/Next (channel
+            # down/up) while a player is playing or paused.
+            return MediaPlayerState.PLAYING
         return MediaPlayerState.ON
 
     def _in_art(self) -> bool:

@@ -3,6 +3,14 @@
 Newest first. Measurements refer to the author's QN55LS03T (2020 Frame) unless
 noted. Technical validation for each release is in [VALIDATION.md](VALIDATION.md).
 
+## 2.6.2 — Channel buttons on Samsung TV
+
+On the Samsung TV source (input confirmed by IP Control) the media player
+state is now `playing` instead of `on`. Home Assistant's dashboards only show
+Previous/Next while a player is playing or paused, so the channel down/up
+buttons were supported but hidden. HDMI sources stay `on`; Play/Pause is still
+not offered on Samsung TV.
+
 ## 2.6.1 — No volume in Art Mode; first GitHub / HACS release
 
 First release published on GitHub as a HACS custom repository: `hacs.json`,
