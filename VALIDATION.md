@@ -1,3 +1,26 @@
+# Validation for version 2.7.2
+
+Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:
+
+- **280 automated tests passed** (7 new), three consecutive full runs.
+- On the user's TV (QN55LS03T), `tools/frame_probe.py hold-channel
+  1114,2110,1114,2110 --idle 10,60,300` over one remote connection: connect
+  1.49 s once; changes after 0, 10, 60 and 300 s idle tuned in 2.93, 2.90,
+  2.77 and 3.25 s (typing 2.4 s each, 0.6 s gap + Enter); keep-alive pings
+  answered 1/1 and 9/9; no close or timeout event from the TV. All four
+  landed on the right channel.
+- New tests: the connection is kept and reused (one connect, no pause after a
+  key, 30 s heartbeat); a close or ms.channel.timeOut from the TV ends it and
+  the next command reconnects; a dead kept connection failing before any key
+  is replaced once; a new connection failing is not retried; `fresh` forces a
+  new connection; the idle timer closes it and restarts on use; a retyped
+  channel number uses a new connection; the connection is closed when the TV
+  turns off and not while it is on.
+- Mutation checks (each caught): never reusing; no retry on a dead kept
+  connection; retrying a new connection too; ignoring `fresh`; no idle close;
+  ignoring ms.channel.timeOut; ignoring the hold; retyping on the kept
+  connection; never closing the remote connection.
+
 # Validation for version 2.7.1
 
 Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:

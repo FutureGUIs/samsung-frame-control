@@ -311,6 +311,8 @@ async def test_dropped_digit_tuning_another_channel_is_retyped_once(hass, setup,
     tv.drop_first_digit = 1  # 1114 arrives as 114 the first time
     await select(hass, "1114 · NBC News NOW")
     assert len(tv.key_batches) == 2
+    # The retype goes over a new connection, in case the kept one was dead.
+    assert tv.fresh_connections == [False, True]
     assert tv.ipc_channel == "1114"
     assert hass.states.get(SELECT).state == "1114 · NBC News NOW"
 
@@ -329,3 +331,18 @@ async def test_no_retype_after_leaving_the_samsung_tv_source(hass, setup, tv):
     with pytest.raises(HomeAssistantError):
         await select(hass, "1114 · NBC News NOW")
     assert len(tv.key_batches) == 1
+
+
+async def test_remote_connection_closed_when_the_tv_turns_off(hass, setup, tv, entry):
+    from unittest.mock import AsyncMock, patch
+
+    on_samsung_tv(tv)
+    await setup(ip_control=True)
+    controller = entry.runtime_data
+    with patch.object(controller.remote, "close", AsyncMock()) as close:
+        await refresh(hass, entry)
+        close.assert_not_awaited()  # kept while the TV is on
+        tv.power = "off"
+        tv.ipc_power = "powerOff"
+        await refresh(hass, entry)
+        close.assert_awaited()

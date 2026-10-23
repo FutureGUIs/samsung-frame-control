@@ -22,6 +22,9 @@ async def async_get_config_entry_diagnostics(hass, entry):
             },
             "explicit_off_reported": controller.off_reported,
             "last_command": dict(getattr(controller, "last_command", {})),
+            "remote_connection_open": getattr(
+                getattr(controller, "remote", None), "connected", None
+            ),
         },
         "ip_control": {
             "paired": controller.ipc is not None,

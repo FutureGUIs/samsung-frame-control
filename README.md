@@ -138,7 +138,7 @@ With IP Control paired, on the Samsung TV source:
   Plus U.S. line-up shipped with the integration (`channels_us.json`); nothing
   is fetched online. A channel that is not in it shows its number.
 - **Channel** select (`select.frame_tv_channel`): every channel by number and
-  name, following the TV. Choosing one types its number on the TV (about 3–4
+  name, following the TV. Choosing one types its number on the TV (about 3
   seconds) and confirms the change.
 - **Browse media** on the media player lists the channels by genre.
 - Previous / Next are channel down / up.
@@ -242,6 +242,7 @@ python tools/frame_probe.py thumbnail 192.168.1.50  # save the current artwork's
 python tools/frame_probe.py slideshow 192.168.1.50  # which slideshow request the TV answers
 python tools/frame_probe.py try-channel 192.168.1.50 2111  # how the TV accepts a channel number
 python tools/frame_probe.py time-channel 192.168.1.50 2111 --gap 0.5 --enter  # time typed digits
+python tools/frame_probe.py hold-channel 192.168.1.50 1114,2110 --idle 60  # one connection kept open
 ```
 
 `check`, `pair`, `watch`, `thumbnail` and `slideshow` never change a TV
@@ -252,7 +253,9 @@ file should be treated like a password.
 
 Everything runs on your LAN: the TV's Art and remote WebSocket channels (port
 8002), its REST power status, UPnP RenderingControl (port 9197) for volume,
-Samsung IP Control (port 1516, optional) and Wake-on-LAN. Power is checked about
+Samsung IP Control (port 1516, optional) and Wake-on-LAN. The remote-key
+connection is kept open between commands (closed when the TV turns off or
+after 15 minutes unused). Power is checked about
 every 15 seconds; Art settings about every 60 seconds; the artwork catalog
 about every five minutes. Polling only reads; only Turn on and source selection
 can wake the TV.

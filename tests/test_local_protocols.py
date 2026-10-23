@@ -120,6 +120,8 @@ async def test_remote_key_waits_for_connect_and_saves_new_token():
     saved = Mock()
     client = remote.AsyncRemoteClient(session, "192.0.2.1", "old", saved)
     await client.send_key("KEY_HDMI3")
+    assert not socket.closed  # kept for the next command
+    await client.close()
     url = session.ws_connect.call_args.args[0]
     assert url.path == "/api/v2/channels/samsung.remote.control"
     assert url.query["token"] == "old"
@@ -160,21 +162,128 @@ async def test_remote_handshake_timeout_is_bounded():
     assert socket.closed
 
 
-async def test_remote_key_connection_stays_open_after_sending():
-    """The TV can drop a key if the socket closes right away (samsungtvws waits 1 s)."""
+async def test_remote_connection_is_kept_and_reused():
+    """Measured: the TV keeps an idle connection; reusing it skips ~1.4 s."""
     socket = Socket({"event": "ms.channel.connect"})
     session = SimpleNamespace(ws_connect=AsyncMock(return_value=socket))
-    events = []
-
-    async def sleep(seconds):
-        events.append(("sleep", seconds, bool(socket.sent), socket.closed))
-
     client = remote.AsyncRemoteClient(session, "192.0.2.1", "t", Mock())
+    sleep = AsyncMock()
     with patch.object(remote.asyncio, "sleep", sleep):
         await client.send_key("KEY_HDMI2")
-    assert events == [("sleep", remote.KEY_HOLD_OPEN, True, False)]
-    assert remote.KEY_HOLD_OPEN >= 1
+        await client.send_key("KEY_CHUP")
+    assert session.ws_connect.await_count == 1
+    assert session.ws_connect.call_args.kwargs["heartbeat"] == remote.HEARTBEAT
+    assert [m["params"]["DataOfCmd"] for m in socket.sent] == ["KEY_HDMI2", "KEY_CHUP"]
+    sleep.assert_not_awaited()  # no pause after a key any more
+    assert client.connected
+    await client.close()
     assert socket.closed
+    assert not client.connected
+
+
+def kept(socket_factory):
+    """A session handing out a new socket per connect."""
+    sockets = []
+
+    async def connect(*args, **kwargs):
+        sockets.append(socket_factory())
+        return sockets[-1]
+
+    return SimpleNamespace(ws_connect=AsyncMock(side_effect=connect)), sockets
+
+
+async def test_closed_by_the_tv_reconnects_on_next_use():
+    session, sockets = kept(lambda: Socket({"event": "ms.channel.connect"}))
+    client = remote.AsyncRemoteClient(session, "192.0.2.1", "t", Mock())
+    await client.send_key("KEY_1")
+    sockets[0].queue.put_nowait(
+        SimpleNamespace(type=aiohttp.WSMsgType.CLOSE, data=None)
+    )
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert not client.connected
+    await client.send_key("KEY_2")
+    assert len(sockets) == 2
+    assert [m["params"]["DataOfCmd"] for m in sockets[1].sent] == ["KEY_2"]
+    await client.close()
+
+
+async def test_timeout_event_from_the_tv_ends_the_connection():
+    session, sockets = kept(lambda: Socket({"event": "ms.channel.connect"}))
+    client = remote.AsyncRemoteClient(session, "192.0.2.1", "t", Mock())
+    await client.send_key("KEY_1")
+    sockets[0].queue.put_nowait(
+        SimpleNamespace(
+            type=aiohttp.WSMsgType.TEXT,
+            data=json.dumps({"event": "ms.channel.timeOut"}),
+        )
+    )
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert not client.connected
+    assert sockets[0].closed
+    await client.close()
+
+
+async def test_dead_kept_connection_is_replaced_before_sending():
+    """A send failing on the kept connection, before any key, retries fresh."""
+    session, sockets = kept(lambda: Socket({"event": "ms.channel.connect"}))
+    client = remote.AsyncRemoteClient(session, "192.0.2.1", "t", Mock())
+    await client.send_key("KEY_1")
+
+    async def broken(data):
+        raise aiohttp.ClientConnectionResetError("gone")
+
+    sockets[0].send_json = broken
+    await client.send_keys(["KEY_2", "KEY_3"], gap=0)
+    assert len(sockets) == 2
+    assert [m["params"]["DataOfCmd"] for m in sockets[1].sent] == ["KEY_2", "KEY_3"]
+    await client.close()
+
+
+async def test_new_connection_failing_is_not_retried():
+    session, sockets = kept(lambda: Socket({"event": "ms.channel.connect"}))
+    client = remote.AsyncRemoteClient(session, "192.0.2.1", "t", Mock())
+
+    async def broken(data):
+        raise aiohttp.ClientConnectionResetError("gone")
+
+    real = session.ws_connect.side_effect
+
+    async def connect(*args, **kwargs):
+        socket = await real(*args, **kwargs)
+        socket.send_json = broken
+        return socket
+
+    session.ws_connect.side_effect = connect
+    with pytest.raises(ArtError) as raised:
+        await client.send_key("KEY_1")
+    assert raised.value.sent is False
+    assert len(sockets) == 1
+    await client.close()
+
+
+async def test_fresh_forces_a_new_connection():
+    session, sockets = kept(lambda: Socket({"event": "ms.channel.connect"}))
+    client = remote.AsyncRemoteClient(session, "192.0.2.1", "t", Mock())
+    await client.send_key("KEY_1")
+    await client.send_keys(["KEY_2"], fresh=True)
+    assert len(sockets) == 2
+    assert sockets[0].closed
+    await client.close()
+
+
+async def test_idle_connection_closes_after_the_idle_time():
+    session, sockets = kept(lambda: Socket({"event": "ms.channel.connect"}))
+    client = remote.AsyncRemoteClient(session, "192.0.2.1", "t", Mock())
+    with patch.object(remote, "IDLE_CLOSE", 0.05):
+        await client.send_key("KEY_1")
+        await client.send_key("KEY_2")  # restarts the timer
+    assert client.connected
+    await asyncio.sleep(0.2)
+    assert not client.connected
+    assert sockets[0].closed
+    await client.close()
 
 
 async def test_typed_number_is_spaced_on_one_connection():
@@ -197,7 +306,8 @@ async def test_typed_number_is_spaced_on_one_connection():
     # Gap after each key but the last, then the hold; one connection.
     assert events == [(1, 0.6, False), (2, 0.6, False), (3, 0.5, False)]
     assert session.ws_connect.await_count == 1
-    assert socket.closed
+    assert not socket.closed
+    await client.close()
 
 
 async def test_failure_after_a_digit_reports_it_was_sent():

@@ -26,6 +26,8 @@ These commands DO act on the TV, to find out what works on your firmware:
   python frame_probe.py try-channel 192.168.1.50 2111  tune a channel on Samsung TV
   python frame_probe.py time-channel 192.168.1.50 2111 --gap 0.3 --enter
                                                        time typed digits (+ Enter)
+  python frame_probe.py hold-channel 192.168.1.50 1114,2110,1114,2110 --idle 10,60,300
+                                                       one remote connection kept open
   python frame_probe.py key 192.168.1.50 KEY_SOURCE    send one remote key
 Remote keys use the TV's remote channel; the first one shows an "allow
 Frame Probe" prompt on the TV.
@@ -653,6 +655,49 @@ class Remote:
                 )
             return reply, tail
 
+    def idle(self, seconds, ping_every=30.0):
+        """Keep the connection open, answering pings and sending our own.
+
+        Returns what happened: whether the TV closed it, and when.
+        """
+        report = {"seconds": seconds, "pings_sent": 0, "pongs": 0, "events": []}
+        start = time.monotonic()
+        next_ping = start + ping_every
+        try:
+            while (now := time.monotonic()) - start < seconds:
+                if now >= next_ping:
+                    self._send_frame(b"probe", opcode=9)
+                    report["pings_sent"] += 1
+                    next_ping = now + ping_every
+                self.sock.settimeout(min(1.0, max(0.05, seconds - (now - start))))
+                try:
+                    opcode, payload = self._read_frame()
+                except (TimeoutError, socket.timeout):
+                    continue
+                if opcode == 8:
+                    raise RemoteError("TV sent close")
+                if opcode == 9:
+                    self._send_frame(payload, opcode=10)
+                elif opcode == 10:
+                    report["pongs"] += 1
+                elif opcode == 1:
+                    try:
+                        event = json.loads(payload).get("event")
+                    except ValueError:
+                        event = "non-JSON text"
+                    report["events"].append(
+                        {"after_s": round(time.monotonic() - start, 1), "event": event}
+                    )
+                    if event in ("ms.channel.timeOut", "ms.channel.disconnect"):
+                        raise RemoteError(event)
+        except (RemoteError, OSError, ssl.SSLError) as err:
+            report["closed"] = f"{type(err).__name__}: {err}"
+            report["closed_after_s"] = round(time.monotonic() - start, 1)
+        finally:
+            if self.sock:
+                self.sock.settimeout(TIMEOUT * 3)
+        return report
+
     def send_key(self, key, hold_open=1.0):
         payload = {
             "method": "ms.remote.control",
@@ -1177,6 +1222,98 @@ def cmd_time_channel(host, target, gap, enter):
     return 0
 
 
+def cmd_hold_channel(host, targets, idles, gap):
+    """Several channel changes over one remote connection, idle in between."""
+    client = ipc_client(host)
+    if not client:
+        return 1
+    numbers = [t.strip() for t in str(targets).split(",") if t.strip()]
+    if not numbers or not all(n.isdigit() for n in numbers):
+        print("Give channel numbers, for example 1114,2110,1114,2110.")
+        return 1
+    if current_input(client) != "TV":
+        print("Switch the TV to the Samsung TV source (normal viewing) first.")
+        return 1
+    saved = load_saved()
+    remote = Remote(host)
+    report = {"gap_s": gap, "changes": []}
+    print("Connecting once to the remote channel...")
+    began = time.monotonic()
+    try:
+        token = remote.connect(
+            saved.get("remote_token") if saved.get("host") == host else None
+        )
+    except (RemoteError, OSError) as err:
+        print(f"Remote channel failed: {err}")
+        return 1
+    if token and token != saved.get("remote_token"):
+        saved.update(host=host, remote_token=token)
+        TOKEN_FILE.write_text(json.dumps(saved))
+    report["connect_s"] = round(time.monotonic() - began, 2)
+    print(f"Connected in {report['connect_s']} s.")
+    try:
+        for index, number in enumerate(numbers):
+            change = {"target": number}
+            if index:
+                wait = idles[min(index - 1, len(idles) - 1)]
+                print(f"Idle {wait:g} s with the connection open...")
+                change["idle"] = remote.idle(wait)
+                if "closed" in change["idle"]:
+                    print(
+                        f"  the connection closed after "
+                        f"{change['idle']['closed_after_s']} s: {change['idle']['closed']}"
+                    )
+                    report["changes"].append(change)
+                    break
+                print(
+                    f"  still open (pings {change['idle']['pings_sent']}, "
+                    f"pongs {change['idle']['pongs']})"
+                )
+            start, _ = current_channel(client)
+            change["start"] = start
+            keys = [f"KEY_{digit}" for digit in number] + ["KEY_ENTER"]
+            typing = time.monotonic()
+            try:
+                for position, key in enumerate(keys):
+                    remote.send_key(
+                        key, hold_open=gap if position + 1 < len(keys) else 0
+                    )
+            except (RemoteError, OSError) as err:
+                change["error"] = f"{type(err).__name__}: {err}"
+                print(f"  sending keys failed: {change['error']}")
+                report["changes"].append(change)
+                break
+            typed = time.monotonic()
+            seen = start
+            while time.monotonic() - typed < 8:
+                seen, _ = current_channel(client)
+                if seen == number:
+                    break
+                time.sleep(0.25)
+            done = time.monotonic()
+            change.update(
+                channel_after=seen,
+                tuned=seen == number,
+                typing_s=round(typed - typing, 2),
+                total_s=round(done - typing, 2),
+            )
+            print(
+                f"{number}: "
+                + (
+                    f"tuned in {change['total_s']} s (no connect needed)"
+                    if change["tuned"]
+                    else f"channel is {seen}, not {number}"
+                )
+            )
+            report["changes"].append(change)
+    finally:
+        remote.close()
+    path = HERE / "frame_probe_hold_channel.json"
+    path.write_text(json.dumps(report, indent=2))
+    print(f"Saved to {path.name}")
+    return 0
+
+
 def report_channel_test(results, worked):
     results["worked"] = worked
     path = HERE / "frame_probe_channel_test.json"
@@ -1245,6 +1382,7 @@ def main(argv=None):
             "try-power-off",
             "try-channel",
             "time-channel",
+            "hold-channel",
             "key",
         ),
     )
@@ -1256,7 +1394,15 @@ def main(argv=None):
     )
     parser.add_argument("--interval", type=float, default=3, help="watch poll seconds")
     parser.add_argument(
-        "--gap", type=float, default=0.3, help="time-channel: seconds between keys"
+        "--gap",
+        type=float,
+        default=None,
+        help="time/hold-channel: seconds between keys",
+    )
+    parser.add_argument(
+        "--idle",
+        default="10,60,300",
+        help="hold-channel: seconds idle before each later change, e.g. 10,60,300",
     )
     parser.add_argument(
         "--enter", action="store_true", help="time-channel: press Enter after digits"
@@ -1271,7 +1417,8 @@ def main(argv=None):
     if args.command == "slideshow":
         return cmd_slideshow(args.host)
     if (
-        args.command in ("try-input", "key", "try-channel", "time-channel")
+        args.command
+        in ("try-input", "key", "try-channel", "time-channel", "hold-channel")
         and not args.arg
     ):
         parser.error(f"{args.command} needs an input or key, e.g. HDMI2 or KEY_SOURCE")
@@ -1280,7 +1427,15 @@ def main(argv=None):
     if args.command == "try-channel":
         return cmd_try_channel(args.host, args.arg)
     if args.command == "time-channel":
-        return cmd_time_channel(args.host, args.arg, max(0.0, args.gap), args.enter)
+        gap = 0.3 if args.gap is None else max(0.0, args.gap)
+        return cmd_time_channel(args.host, args.arg, gap, args.enter)
+    if args.command == "hold-channel":
+        try:
+            idles = [max(0.0, float(x)) for x in args.idle.split(",") if x.strip()]
+        except ValueError:
+            parser.error("--idle takes seconds separated by commas, e.g. 10,60,300")
+        gap = 0.6 if args.gap is None else max(0.0, args.gap)
+        return cmd_hold_channel(args.host, args.arg, idles or [10], gap)
     if args.command == "try-power-off":
         return cmd_try_power_off(args.host)
     if args.command == "key":

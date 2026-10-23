@@ -3,6 +3,21 @@
 Newest first. Measurements refer to the author's QN55LS03T (2020 Frame) unless
 noted. Technical validation for each release is in [VALIDATION.md](VALIDATION.md).
 
+## 2.7.2 — Remote connection kept open
+
+The remote-key connection (channel numbers, channel up/down, input and
+volume keys) is now kept open between commands instead of being opened for
+each one. Measured on a QN55LS03T with `tools/frame_probe.py hold-channel`:
+the TV kept an idle connection for 5 minutes, answering every 30-second
+keep-alive, and four channel changes over it took 2.8–3.3 s each, without
+the 1.5 s connect. The one-second pause after each key, which only kept a
+per-command connection from closing too soon, is gone too.
+
+The connection is closed when the TV turns off, on unload, and after 15
+minutes unused. If the kept connection has died, a command that had not sent
+anything yet reconnects once; a retyped channel number always uses a new
+connection. Diagnostics show `remote_connection_open`.
+
 ## 2.7.1 — Faster channel changes
 
 Choosing a channel took about 8–9 seconds: digits were typed one second

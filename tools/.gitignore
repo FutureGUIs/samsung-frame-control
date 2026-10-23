@@ -7,3 +7,4 @@ frame_thumbnail_*
 frame_probe_slideshow.json
 frame_probe_channel_test.json
 frame_probe_channel_timing.json
+frame_probe_hold_channel.json

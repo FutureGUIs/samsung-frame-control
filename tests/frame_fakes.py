@@ -93,6 +93,7 @@ class FakeTV:
         self._typed = ""
         self.key_batches = []  # keys sent over one connection
         self.key_timing = []  # (gap, hold) of each send_keys call
+        self.fresh_connections = []  # send_keys asked for a new connection
         self.drop_first_digit = 0  # entries whose first digit the TV misses
         self.keys_error = None  # raised by send_keys (e.g. ArtError(sent=...))
 
@@ -258,9 +259,10 @@ class FakeTV:
             self.ipc_channel = self._typed
         self._typed = ""
 
-    async def send_keys(self, client, keys, gap=1.0, hold=1.0):
+    async def send_keys(self, client, keys, gap=1.0, hold=0.0, fresh=False):
         self.key_batches.append(list(keys))
         self.key_timing.append((gap, hold))
+        self.fresh_connections.append(fresh)
         if self.drop_first_digit and keys and keys[0][-1:].isdigit():
             self.drop_first_digit -= 1
             keys = keys[1:]

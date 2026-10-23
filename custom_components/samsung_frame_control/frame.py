@@ -43,7 +43,6 @@ CHANNEL_READBACK = 4  # IP Control reads, 1 s apart, after a channel key
 # time-channel): digits 0.3 s apart or less lost a digit in 4 of 5 tries;
 # 0.5 s apart plus Enter tuned 0.35 s after Enter (3.7 s in total).
 DIGIT_GAP = 0.6
-DIGIT_HOLD = 0.5  # connection kept open after Enter
 TUNE_POLL = 0.25  # seconds between IP Control reads while the TV tunes
 TUNE_WAIT = 4.0  # seconds to wait for the new channel per entry
 TUNE_ENTRIES = 2  # a finished entry that tuned the wrong channel is retyped once
@@ -486,7 +485,7 @@ class FrameController:
                 elif action == "off":
                     if not await port_open(self.host):
                         raise FrameError("unreachable_off")
-                    await self.art.close()
+                    await self._close_connections()
                     self.controls.offline()
                     self.controls.set_power(None, "shutdown_requested")
                     self.off_reported = True
@@ -826,7 +825,9 @@ class FrameController:
             self._set_activity("changing_channel")
             keys = [f"KEY_{digit}" for digit in number] + ["KEY_ENTER"]
             for entry in range(TUNE_ENTRIES):
-                await self._type_channel(keys)
+                # A retype uses a new connection, in case the kept one had
+                # silently stopped delivering keys.
+                await self._type_channel(keys, fresh=entry > 0)
                 self._step("keys" if not entry else f"keys_{entry + 1}")
                 waited = 0.0
                 while waited < TUNE_WAIT:
@@ -842,14 +843,14 @@ class FrameController:
                     break
             raise FrameError("channel_unconfirmed", stage="channel", sent=True)
 
-    async def _type_channel(self, keys):
+    async def _type_channel(self, keys, fresh=False):
         """Type one full entry; a partly typed one is never resent."""
         for attempt in range(KEY_ATTEMPTS):
             if attempt:
                 await asyncio.sleep(2)
             try:
                 async with asyncio.timeout(KEY_TIMEOUT + len(keys)):
-                    await self.remote.send_keys(keys, gap=DIGIT_GAP, hold=DIGIT_HOLD)
+                    await self.remote.send_keys(keys, gap=DIGIT_GAP, fresh=fresh)
                 return
             except (TimeoutError, ArtError) as err:
                 code = getattr(err, "code", "timeout")
@@ -988,11 +989,11 @@ class FrameController:
                     previous = self.controls.power_state
                     state, source = await self._observe_power()
                     if state == "off":
-                        await self.art.close()
+                        await self._close_connections()
                         return
                     if source == "unreachable":
                         self.controls.offline()
-                        await self.art.close()
+                        await self._close_connections()
                         return
                     # Power is reconciled every poll; the more expensive Art
                     # settings/catalog retain their existing slower cadence.
@@ -1068,4 +1069,8 @@ class FrameController:
             task = self._active
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        await self._close_connections()
+
+    async def _close_connections(self):
         await self.art.close()
+        await self.remote.close()
