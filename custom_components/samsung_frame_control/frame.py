@@ -10,8 +10,9 @@ import re
 import socket
 import sys
 import time
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from . import upnp
@@ -46,6 +47,9 @@ CHANNEL_READBACK = 4  # IP Control reads, 1 s apart, after a channel key
 DIGIT_GAP = 0.6
 TUNE_POLL = 0.25  # seconds between IP Control reads while the TV tunes
 TUNE_WAIT = 4.0  # seconds to wait for the new channel per entry
+TRACE_SECONDS = 120  # requests kept with an unexplained Art Mode exit
+ART_EXITS_KEPT = 10
+COMMAND_GRACE = 20  # seconds after a command during which a change is ours
 SOURCE_WAIT = 30  # seconds for IP Control to report Samsung TV after switching
 TUNE_ENTRIES = 2  # a finished entry that tuned the wrong channel is retyped once
 THUMBNAIL_CACHE = 8  # artwork thumbnails kept (about 30 KB each)
@@ -244,6 +248,14 @@ class FrameController:
         self.channel_store = None
         self.channel_list_error = None
         self._channel_lock = asyncio.Lock()
+        # What the integration sent the TV recently, and Art Mode exits that
+        # no Home Assistant command explains (diagnostics).
+        self._trace = deque(maxlen=400)
+        self.art_exits = deque(maxlen=ART_EXITS_KEPT)
+        self._seen_art = None
+        self._command_end = 0.0
+        self._in_command = False  # a user command (not a background poll) runs
+        self.art.on_request = lambda command: self._note("art", command)
         # The TV explicitly reported (or HA commanded) power-off since it was
         # last seen on. Only then does a refused connection mean "standby".
         self.off_reported = False
@@ -253,8 +265,49 @@ class FrameController:
         self._thumbnail_lock = asyncio.Lock()
         self.thumbnail_status = {}
 
+    def _note(self, kind, detail):
+        """Record one request to (or event from) the TV, without secrets."""
+        self._trace.append((time.monotonic(), kind, str(detail)))
+
+    def _check_art_exit(self, via):
+        """Record Art Mode turning off without a Home Assistant command."""
+        now = self.controls.values.get("art_mode")
+        if self.controls.power_state == "off":
+            # Turning off is not leaving Art Mode; start afresh when back on.
+            self._seen_art = None
+            return
+        if now not in ("on", "off"):
+            return
+        before, self._seen_art = self._seen_art, now
+        if before != "on" or now != "off":
+            return
+        # Background polls hold the same lock; only user commands count.
+        if self._in_command or time.monotonic() - self._command_end < COMMAND_GRACE:
+            return
+        moment = time.monotonic()
+        record = {
+            "time": datetime.now(UTC).isoformat(timespec="seconds"),
+            "detected_by": via,
+            "input_after": self.input_reported,
+            "channel_after": self.channel,
+            "requests_before": [
+                {"seconds_before": round(moment - t, 1), "kind": kind, "detail": detail}
+                for t, kind, detail in self._trace
+                if moment - t <= TRACE_SECONDS
+            ],
+        }
+        self.art_exits.append(record)
+        _LOGGER.warning(
+            "Samsung Frame left Art Mode without a command from Home Assistant "
+            "(now on %s); see diagnostics art_mode_exits for what was sent before",
+            self.input_reported or "an unknown input",
+        )
+
     def _event(self, data):
+        if data.get("event"):
+            self._note("art_event", data["event"])
         self.controls.push(data)
+        self._check_art_exit("art_event")
         if self.controls.power_state == "off":
             self.off_reported = True
             self.input_confirmed = False
@@ -286,6 +339,7 @@ class FrameController:
         if self.ipc is None or self.ipc_auth_failed:
             self.input_confirmed = False
             return None
+        self._note("ip_control", "read_state")
         try:
             power, states = await self._executor(self.ipc.read_state)
         except IpcError as err:
@@ -310,6 +364,10 @@ class FrameController:
             self.input_confirmed = True
             if reported in REPORTED_INPUTS:
                 self.last_input = REPORTED_INPUTS[reported]
+        if power == "powerOn":
+            self._check_art_exit("ip_control")
+        else:
+            self._seen_art = None
         return power
 
     def _apply_ipc_art_mode(self, mode):
@@ -402,9 +460,7 @@ class FrameController:
                     async with asyncio.timeout(45):
                         for attempt in range(30):
                             if attempt % 3 == 0:
-                                await self._executor(
-                                    send_magic_packet, self.mac, self.broadcast
-                                )
+                                await self._executor(self._wake_on_lan)
                             await asyncio.sleep(1)
                             if await port_open(self.host):
                                 break
@@ -467,9 +523,7 @@ class FrameController:
                     if await self._ipc_power() == "powerOff":
                         await self._ipc_wake()
                     for _ in range(3):
-                        await self._executor(
-                            send_magic_packet, self.mac, self.broadcast
-                        )
+                        await self._executor(self._wake_on_lan)
                         await asyncio.sleep(1)
                     await asyncio.sleep(3)
                     continue
@@ -513,6 +567,7 @@ class FrameController:
                         return True
                     self.last_command["path"] = "power_key"
                     # Never retry a power hold: delivery may already have occurred.
+                    self._note("worker", action)
                     return await run_worker(
                         self.host, self.token, action, self._save_token
                     )
@@ -536,6 +591,7 @@ class FrameController:
                 await asyncio.sleep(2)
             try:
                 async with asyncio.timeout(KEY_TIMEOUT):
+                    self._note("remote", key)
                     await self.remote.send_key(key)
                 return
             except TimeoutError:
@@ -551,6 +607,7 @@ class FrameController:
 
     async def _ipc_call(self, method, params=None):
         """One IP Control call in the executor; marks a rejected token."""
+        self._note("ip_control", method + (" (set)" if params else ""))
         try:
             return await self._executor(self.ipc.call, method, params)
         except IpcError as err:
@@ -642,6 +699,8 @@ class FrameController:
                 raise FrameError("unloaded")
             self._active = asyncio.current_task()
             self._command_start = start
+            self._in_command = True
+            self._note("command", action)
             self.last_command = {
                 "action": action,
                 "waited_s": round(time.monotonic() - start, 1),
@@ -651,8 +710,18 @@ class FrameController:
         finally:
             self.last_command["took_s"] = round(time.monotonic() - start, 1)
             self._active = None
+            # Whatever the command did to Art Mode is ours, not unexplained.
+            self._in_command = False
+            self._command_end = time.monotonic()
+            art = self.controls.values.get("art_mode")
+            if art in ("on", "off"):
+                self._seen_art = art
             self._lock.release()
             self._set_activity("idle")
+
+    def _wake_on_lan(self):
+        self._trace.append((time.monotonic(), "wake_on_lan", "magic packet"))
+        send_magic_packet(self.mac, self.broadcast)
 
     def _step(self, name):
         """Record when a command step finished, for diagnostics."""
@@ -883,6 +952,7 @@ class FrameController:
                 await asyncio.sleep(2)
             try:
                 async with asyncio.timeout(KEY_TIMEOUT + len(keys)):
+                    self._note("remote", " ".join(keys))
                     await self.remote.send_keys(keys, gap=DIGIT_GAP, fresh=fresh)
                 return
             except (TimeoutError, ArtError) as err:
@@ -1062,9 +1132,11 @@ class FrameController:
                         return  # a user command is queued; Art state can wait
                     if not await port_open(self.host):
                         raise ArtError("cannot_connect")
-                    if await self.controls.refresh(
+                    refreshed = await self.controls.refresh(
                         catalog=catalog, stop=self._command_waiting
-                    ):
+                    )
+                    self._check_art_exit("art_refresh")
+                    if refreshed:
                         self._last_art_refresh = time.monotonic()
             except (ArtError, TimeoutError) as err:
                 self.controls.offline()

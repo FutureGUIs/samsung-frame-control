@@ -43,7 +43,7 @@ class ChannelListButton(CoordinatorEntity, ButtonEntity):
 
     _attr_has_entity_name = True
     _attr_name = "Update channel list"
-    _attr_icon = "mdi:playlist-refresh"
+    _attr_icon = "mdi:cloud-download-outline"
     _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, entry):

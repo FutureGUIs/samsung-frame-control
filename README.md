@@ -237,6 +237,11 @@ data:
 - **Authorization:** reconfigure with the TV on and accept the prompt. Remove a
   previously denied *HA Frame Control* entry from the TV's device list if
   needed.
+- **The TV leaves Art Mode by itself:** Home Assistant's log shows a warning
+  each time it happens without a command from Home Assistant, and diagnostics
+  (`art_mode_exits`) list what the integration sent the TV in the two minutes
+  before. Compare the times with other devices' history; an HDMI device
+  waking the TV through HDMI-CEC (Anynet+) is a common cause.
 - **Report a problem:** download diagnostics from the integration's menu right
   after the problem and attach them to an
   [issue](https://github.com/FutureGUIs/samsung-frame-control/issues).

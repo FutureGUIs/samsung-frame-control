@@ -3,6 +3,21 @@
 Newest first. Measurements refer to the author's QN55LS03T (2020 Frame) unless
 noted. Technical validation for each release is in [VALIDATION.md](VALIDATION.md).
 
+## 2.8.2 — Log of unexplained Art Mode exits; button icon
+
+- **Art Mode exit log:** when the TV leaves Art Mode without a command from
+  Home Assistant, the integration logs a warning with the time, and
+  diagnostics (`art_mode_exits`, the last 10) record the input it went to and
+  every request the integration had sent the TV in the two minutes before
+  (IP Control reads and commands, Art channel requests including thumbnails,
+  remote keys, Wake-on-LAN, commands) plus the Art events the TV pushed. Turning
+  off is not counted, nor is anything within 20 s of a Home Assistant command.
+  This is to find out why a TV can drop from Art Mode to Samsung TV every
+  30–60 minutes.
+- **Fixed:** the Update channel list button had no icon (`mdi:playlist-refresh`
+  does not exist in Material Design Icons); it is now
+  `mdi:cloud-download-outline`.
+
 ## 2.8.1 — Channel actions no longer vanish; play a channel from any input
 
 - **Fixed:** "does not support action media_player.play_media" on the Samsung

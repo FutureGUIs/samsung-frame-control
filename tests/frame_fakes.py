@@ -201,6 +201,8 @@ class FakeTV:
         from custom_components.samsung_frame_control.async_art import ArtError
 
         self.art_requests.append((command, params))
+        if getattr(client, "on_request", None):
+            client.on_request(command)  # like the real client's request()
         if self.art_delay:
             await asyncio.sleep(self.art_delay)  # real sleep, not the patched one
         if not self.reachable:

@@ -79,6 +79,7 @@ class AsyncArtClient:
         self._pending = {}
         self._connect_lock = asyncio.Lock()
         self._request_lock = asyncio.Lock()
+        self.on_request = None  # diagnostics: called with each request name
 
     @property
     def connected(self):
@@ -215,6 +216,8 @@ class AsyncArtClient:
                     pass
 
     async def request(self, command, *, events=(), timeout=4, **params):
+        if self.on_request:
+            self.on_request(command)
         async with self._request_lock:
             await self.connect()
             key = str(uuid.uuid4())

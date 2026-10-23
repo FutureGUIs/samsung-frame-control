@@ -70,4 +70,7 @@ async def async_get_config_entry_diagnostics(hass, entry):
         },
         "mat_ids": controls.mat_ids,
         "last_art_operation": dict(controls.last_operation),
+        # Art Mode exits no Home Assistant command explains, with what the
+        # integration sent the TV in the two minutes before each.
+        "art_mode_exits": list(getattr(controller, "art_exits", [])),
     }

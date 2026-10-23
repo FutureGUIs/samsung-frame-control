@@ -1,3 +1,24 @@
+# Validation for version 2.8.2
+
+Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:
+
+- **319 automated tests passed** (8 new), five consecutive full runs.
+- Reported: the Update channel list button showed no icon; the user's TV
+  still drops from Art Mode to Samsung TV every 30–60 minutes. Checked
+  against Material Design Icons (Templarian/MaterialDesign-SVG): no
+  `playlist-refresh`; every other icon the integration uses exists.
+- New tests: an exit the TV makes by itself is recorded once, with the input
+  and channel after, IP Control and Art requests from the last two minutes,
+  a log warning, and no tokens; Home Assistant's own source changes are not
+  recorded, but a later exit is (with the command in its history); turning
+  off, by IP Control or by the Art channel's standby event, is not an exit;
+  exits seen through Art channel events without IP Control are recorded; only
+  the last 10 are kept; requests older than two minutes are left out; the
+  button's icon.
+- Mutation checks (each caught): using the poll lock as "command running"
+  (no exit was ever recorded from polls); not adopting a command's result;
+  counting power-off; not checking Art events; no time window; the old icon.
+
 # Validation for version 2.8.1
 
 Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:
