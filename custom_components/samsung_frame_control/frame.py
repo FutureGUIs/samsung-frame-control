@@ -39,7 +39,14 @@ INPUT_CHECKS = 4
 INPUT_CHECK_DELAY = 1.5
 AUDIO_READBACK_ATTEMPTS = 3
 CHANNEL_READBACK = 4  # IP Control reads, 1 s apart, after a channel key
-TUNE_READBACK = 8  # IP Control reads, 1 s apart, after typing a channel number
+# Typed channel numbers, measured on a QN55LS03T (tools/frame_probe.py
+# time-channel): digits 0.3 s apart or less lost a digit in 4 of 5 tries;
+# 0.5 s apart plus Enter tuned 0.35 s after Enter (3.7 s in total).
+DIGIT_GAP = 0.6
+DIGIT_HOLD = 0.5  # connection kept open after Enter
+TUNE_POLL = 0.25  # seconds between IP Control reads while the TV tunes
+TUNE_WAIT = 4.0  # seconds to wait for the new channel per entry
+TUNE_ENTRIES = 2  # a finished entry that tuned the wrong channel is retyped once
 THUMBNAIL_CACHE = 8  # artwork thumbnails kept (about 30 KB each)
 ARTWORK_WRITES = ("random_artwork", *STEP_KEYS)
 _LOGGER = logging.getLogger(__name__)
@@ -800,8 +807,8 @@ class FrameController:
     async def async_tune_channel(self, number: str) -> None:
         """Type a channel number on the Samsung TV source, then read it back.
 
-        IP Control's channel setter is refused by a 2020 Frame (-32602), but
-        typed digits tune without Enter. Needs IP Control to confirm.
+        IP Control's channel setter is refused by a 2020 Frame (-32602);
+        typed digits plus Enter tune. Needs IP Control to confirm.
         """
         number = str(number).strip()
         if not number.isdigit() or not 0 < len(number) <= 5:
@@ -817,30 +824,40 @@ class FrameController:
             if self.channel == number:
                 return
             self._set_activity("changing_channel")
-            keys = [f"KEY_{digit}" for digit in number]
-            for attempt in range(KEY_ATTEMPTS):
-                if attempt:
-                    await asyncio.sleep(2)
-                try:
-                    async with asyncio.timeout(KEY_TIMEOUT + len(keys)):
-                        await self.remote.send_keys(keys)
+            keys = [f"KEY_{digit}" for digit in number] + ["KEY_ENTER"]
+            for entry in range(TUNE_ENTRIES):
+                await self._type_channel(keys)
+                self._step("keys" if not entry else f"keys_{entry + 1}")
+                waited = 0.0
+                while waited < TUNE_WAIT:
+                    await asyncio.sleep(TUNE_POLL)
+                    waited += TUNE_POLL
+                    await self._read_ipc()
+                    if self.channel == number:
+                        self._step("confirmed")
+                        return
+                # The entry is finished (Enter was sent), so a dropped digit
+                # that tuned another channel can safely be typed again.
+                if not self.on_tv_source():
                     break
-                except (TimeoutError, ArtError) as err:
-                    code = getattr(err, "code", "timeout")
-                    sent = getattr(err, "sent", True)
-                    # A partly typed number must never be typed again.
-                    if sent or code not in ("cannot_connect", "timeout"):
-                        raise FrameError(code, stage="channel", sent=sent) from None
-                    if attempt + 1 == KEY_ATTEMPTS:
-                        raise FrameError(code, stage="channel") from None
-            self._step("keys")
-            for _ in range(TUNE_READBACK):
-                await asyncio.sleep(1)
-                await self._read_ipc()
-                if self.channel == number:
-                    self._step("confirmed")
-                    return
             raise FrameError("channel_unconfirmed", stage="channel", sent=True)
+
+    async def _type_channel(self, keys):
+        """Type one full entry; a partly typed one is never resent."""
+        for attempt in range(KEY_ATTEMPTS):
+            if attempt:
+                await asyncio.sleep(2)
+            try:
+                async with asyncio.timeout(KEY_TIMEOUT + len(keys)):
+                    await self.remote.send_keys(keys, gap=DIGIT_GAP, hold=DIGIT_HOLD)
+                return
+            except (TimeoutError, ArtError) as err:
+                code = getattr(err, "code", "timeout")
+                sent = getattr(err, "sent", True)
+                if sent or code not in ("cannot_connect", "timeout"):
+                    raise FrameError(code, stage="channel", sent=sent) from None
+                if attempt + 1 == KEY_ATTEMPTS:
+                    raise FrameError(code, stage="channel") from None
 
     def thumbnail_unavailable(self, content_id) -> bool:
         """True while a failed thumbnail should not be asked for again."""

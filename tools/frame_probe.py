@@ -24,6 +24,8 @@ These commands DO act on the TV, to find out what works on your firmware:
   python frame_probe.py try-input 192.168.1.50 HDMI2   try each input method
   python frame_probe.py try-power-off 192.168.1.50     IP Control power-off
   python frame_probe.py try-channel 192.168.1.50 2111  tune a channel on Samsung TV
+  python frame_probe.py time-channel 192.168.1.50 2111 --gap 0.3 --enter
+                                                       time typed digits (+ Enter)
   python frame_probe.py key 192.168.1.50 KEY_SOURCE    send one remote key
 Remote keys use the TV's remote channel; the first one shows an "allow
 Frame Probe" prompt on the TV.
@@ -1101,6 +1103,80 @@ def cmd_try_channel(host, target):
     return report_channel_test(results, None)
 
 
+def cmd_time_channel(host, target, gap, enter):
+    """Time a typed channel number: digit gap and optional Enter."""
+    client = ipc_client(host)
+    if not client:
+        return 1
+    target = str(target).strip()
+    if not target.isdigit():
+        print("Give a channel number, for example 2111.")
+        return 1
+    if current_input(client) != "TV":
+        print("Switch the TV to the Samsung TV source (normal viewing) first.")
+        return 1
+    start, _ = current_channel(client)
+    if start == target:
+        print("Pick a channel other than the current one.")
+        return 1
+    keys = [f"KEY_{digit}" for digit in target] + (["KEY_ENTER"] if enter else [])
+    saved = load_saved()
+    remote = Remote(host)
+    run = {"start": start, "target": target, "gap_s": gap, "enter": enter}
+    try:
+        began = time.monotonic()
+        token = remote.connect(
+            saved.get("remote_token") if saved.get("host") == host else None
+        )
+        if token and token != saved.get("remote_token"):
+            saved.update(host=host, remote_token=token)
+            TOKEN_FILE.write_text(json.dumps(saved))
+        run["connect_s"] = round(time.monotonic() - began, 2)
+        typing = time.monotonic()
+        for index, key in enumerate(keys):
+            remote.send_key(key, hold_open=gap if index + 1 < len(keys) else 0)
+        typed = time.monotonic()
+        run["typing_s"] = round(typed - typing, 2)
+        # Keep the connection open while the TV tunes; poll IP Control.
+        seen = start
+        while time.monotonic() - typed < 12:
+            seen, _ = current_channel(client)
+            if seen == target:
+                break
+            time.sleep(0.25)
+        done = time.monotonic()
+    except (RemoteError, OSError) as err:
+        print(f"Remote channel failed: {err}")
+        return 1
+    finally:
+        remote.close()
+    run.update(
+        channel_after=seen,
+        tuned=seen == target,
+        after_last_key_s=round(done - typed, 2),
+        total_s=round(done - began, 2),
+    )
+    print(
+        f"{' '.join(keys)} with {gap} s between keys: "
+        + (
+            f"tuned {target} {run['after_last_key_s']} s after the last key, "
+            f"{run['total_s']} s in total (connect {run['connect_s']} s, "
+            f"typing {run['typing_s']} s)."
+            if run["tuned"]
+            else f"channel is {seen}, not {target} (a digit may have been dropped)."
+        )
+    )
+    path = HERE / "frame_probe_channel_timing.json"
+    try:
+        runs = json.loads(path.read_text())
+    except (OSError, ValueError):
+        runs = []
+    runs.append(run)
+    path.write_text(json.dumps(runs, indent=2))
+    print(f"Added to {path.name}")
+    return 0
+
+
 def report_channel_test(results, worked):
     results["worked"] = worked
     path = HERE / "frame_probe_channel_test.json"
@@ -1168,6 +1244,7 @@ def main(argv=None):
             "try-input",
             "try-power-off",
             "try-channel",
+            "time-channel",
             "key",
         ),
     )
@@ -1178,6 +1255,12 @@ def main(argv=None):
         help="input (HDMI2, TV), key (KEY_SOURCE) or artwork id (MY_F0001)",
     )
     parser.add_argument("--interval", type=float, default=3, help="watch poll seconds")
+    parser.add_argument(
+        "--gap", type=float, default=0.3, help="time-channel: seconds between keys"
+    )
+    parser.add_argument(
+        "--enter", action="store_true", help="time-channel: press Enter after digits"
+    )
     args = parser.parse_args(argv)
     if args.command == "check":
         return cmd_check(args.host)
@@ -1187,12 +1270,17 @@ def main(argv=None):
         return cmd_thumbnail(args.host, args.arg)
     if args.command == "slideshow":
         return cmd_slideshow(args.host)
-    if args.command in ("try-input", "key", "try-channel") and not args.arg:
+    if (
+        args.command in ("try-input", "key", "try-channel", "time-channel")
+        and not args.arg
+    ):
         parser.error(f"{args.command} needs an input or key, e.g. HDMI2 or KEY_SOURCE")
     if args.command == "try-input":
         return cmd_try_input(args.host, args.arg)
     if args.command == "try-channel":
         return cmd_try_channel(args.host, args.arg)
+    if args.command == "time-channel":
+        return cmd_time_channel(args.host, args.arg, max(0.0, args.gap), args.enter)
     if args.command == "try-power-off":
         return cmd_try_power_off(args.host)
     if args.command == "key":

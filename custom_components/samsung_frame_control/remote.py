@@ -52,12 +52,13 @@ class AsyncRemoteClient:
         """Send one Click. Delivery means the TV accepted the frame, nothing more."""
         await self.send_keys([key])
 
-    async def send_keys(self, keys: list[str]) -> None:
-        """Send Clicks over one connection, one second apart.
+    async def send_keys(
+        self, keys: list[str], gap: float = KEY_HOLD_OPEN, hold: float = KEY_HOLD_OPEN
+    ) -> None:
+        """Send Clicks over one connection, `gap` apart, open `hold` after.
 
-        Used for typed channel numbers: the TV tunes after the last digit
-        (verified on a 2020 Frame). `sent` on an error says whether any key
-        reached the TV, so a partly typed number is never resent.
+        Used for typed channel numbers. `sent` on an error says whether any
+        key reached the TV, so a partly typed number is never resent.
         """
         query = {"name": base64.b64encode(CLIENT_NAME.encode()).decode()}
         if self.token:
@@ -76,7 +77,9 @@ class AsyncRemoteClient:
                 # Samsung uses a self-signed certificate on the local TV.
                 ws = await self.session.ws_connect(url, ssl=False, heartbeat=30)
                 await self._handshake(ws)
-            for key in keys:
+            for index, key in enumerate(keys):
+                if index:
+                    await asyncio.sleep(gap)
                 async with asyncio.timeout(HANDSHAKE_TIMEOUT):
                     await ws.send_json(
                         {
@@ -90,7 +93,7 @@ class AsyncRemoteClient:
                         }
                     )
                 sent = True
-                await asyncio.sleep(KEY_HOLD_OPEN)
+            await asyncio.sleep(hold)
         except ArtError:
             raise
         except TimeoutError:

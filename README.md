@@ -138,8 +138,8 @@ With IP Control paired, on the Samsung TV source:
   Plus U.S. line-up shipped with the integration (`channels_us.json`); nothing
   is fetched online. A channel that is not in it shows its number.
 - **Channel** select (`select.frame_tv_channel`): every channel by number and
-  name, following the TV. Choosing one types its number on the TV and confirms
-  the change.
+  name, following the TV. Choosing one types its number on the TV (about 3–4
+  seconds) and confirms the change.
 - **Browse media** on the media player lists the channels by genre.
 - Previous / Next are channel down / up.
 - In automations:
@@ -241,6 +241,7 @@ python tools/frame_probe.py watch 192.168.1.50      # print changes as you use t
 python tools/frame_probe.py thumbnail 192.168.1.50  # save the current artwork's thumbnail
 python tools/frame_probe.py slideshow 192.168.1.50  # which slideshow request the TV answers
 python tools/frame_probe.py try-channel 192.168.1.50 2111  # how the TV accepts a channel number
+python tools/frame_probe.py time-channel 192.168.1.50 2111 --gap 0.5 --enter  # time typed digits
 ```
 
 `check`, `pair`, `watch`, `thumbnail` and `slideshow` never change a TV

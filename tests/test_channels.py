@@ -107,7 +107,7 @@ async def test_selecting_a_channel_types_its_number(hass, setup, tv):
     await setup(ip_control=True)
     await select(hass, "1114 · NBC News NOW")
     # One connection, so the TV sees one typed number.
-    assert tv.key_batches == [["KEY_1", "KEY_1", "KEY_1", "KEY_4"]]
+    assert tv.key_batches == [["KEY_1", "KEY_1", "KEY_1", "KEY_4", "KEY_ENTER"]]
     assert tv.ipc_channel == "1114"
     assert hass.states.get(SELECT).state == "1114 · NBC News NOW"
     assert hass.states.get(PLAYER).attributes["media_title"] == "1114 · NBC News NOW"
@@ -166,7 +166,8 @@ async def test_number_not_in_the_tv_lineup_is_reported(hass, setup, tv):
     await setup(ip_control=True)
     with pytest.raises(HomeAssistantError, match="still reports a different channel"):
         await select(hass, "1114 · NBC News NOW")
-    assert tv.key_batches == [["KEY_1", "KEY_1", "KEY_1", "KEY_4"]]  # typed once
+    # One retry after a finished entry, then reported.
+    assert tv.key_batches == [["KEY_1", "KEY_1", "KEY_1", "KEY_4", "KEY_ENTER"]] * 2
     assert hass.states.get(SELECT).state == "2110 · America's Test Kitchen"
 
 
@@ -290,3 +291,41 @@ async def test_diagnostics_show_the_lineup(hass, setup, tv, entry):
 def test_file_is_next_to_the_integration():
     assert CHANNELS_FILE.parent.name == "samsung_frame_control"
     assert Path(CHANNELS_FILE).is_file()
+
+
+async def test_digits_are_spaced_and_confirmed_with_enter(hass, setup, tv):
+    on_samsung_tv(tv)
+    await setup(ip_control=True)
+    await select(hass, "1114 · NBC News NOW")
+    # Measured: 0.3 s apart lost digits, 0.5 s apart plus Enter tuned.
+    gap, hold = tv.key_timing[0]
+    assert gap >= 0.5
+    assert hold < 1.0
+    assert tv.key_batches[0][-1] == "KEY_ENTER"
+
+
+async def test_dropped_digit_tuning_another_channel_is_retyped_once(hass, setup, tv):
+    on_samsung_tv(tv)
+    tv.channel_digits = 99  # tune only on Enter, like a rushed entry
+    await setup(ip_control=True)
+    tv.drop_first_digit = 1  # 1114 arrives as 114 the first time
+    await select(hass, "1114 · NBC News NOW")
+    assert len(tv.key_batches) == 2
+    assert tv.ipc_channel == "1114"
+    assert hass.states.get(SELECT).state == "1114 · NBC News NOW"
+
+
+async def test_no_retype_after_leaving_the_samsung_tv_source(hass, setup, tv):
+    on_samsung_tv(tv)
+    tv.missing_channels = {"1114"}
+    await setup(ip_control=True)
+    original = tv.send_keys
+
+    async def then_switch(client, keys, **timing):
+        await original(client, keys, **timing)
+        tv.ipc_input = "HDMI1"  # someone changed input meanwhile
+
+    tv.send_keys = then_switch
+    with pytest.raises(HomeAssistantError):
+        await select(hass, "1114 · NBC News NOW")
+    assert len(tv.key_batches) == 1

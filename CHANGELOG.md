@@ -3,6 +3,17 @@
 Newest first. Measurements refer to the author's QN55LS03T (2020 Frame) unless
 noted. Technical validation for each release is in [VALIDATION.md](VALIDATION.md).
 
+## 2.7.1 — Faster channel changes
+
+Choosing a channel took about 8–9 seconds: digits were typed one second
+apart and the TV then waited about 3 seconds for more digits. Measured on a
+QN55LS03T with `tools/frame_probe.py time-channel`: digits 0.3 s apart or
+less lost a digit in 4 of 5 tries (1114 became 114), while digits 0.5 s
+apart followed by Enter tuned 0.35 s after Enter, 3.7 s in total. Now digits
+are typed 0.6 s apart, followed by Enter, and the new channel is checked
+every quarter second. If a finished entry still lands on another channel, the
+number is typed once more (not after the TV left the Samsung TV source).
+
 ## 2.7.0 — Samsung TV channel names and channel selector
 
 - **Channel names built in:** the Samsung TV Plus U.S. line-up (590 channels,

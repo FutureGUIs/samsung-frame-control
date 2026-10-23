@@ -1,3 +1,24 @@
+# Validation for version 2.7.1
+
+Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:
+
+- **273 automated tests passed** (5 new), three consecutive full runs.
+- On the user's TV (QN55LS03T), `tools/frame_probe.py time-channel`, eight
+  runs: 0.3 s between digits without Enter tuned once (3.6 s after the last
+  digit, 5.9 s total) and lost a digit twice (1114 → 114; 2111 unchanged from
+  an invalid channel); 0.2 s lost a digit (1112 → 112); with Enter at 0.3,
+  0.1 and 0 s the TV tuned 111, 12 and 2 (more leading digits lost the faster
+  they came); 0.5 s plus Enter tuned 2110 correctly 0.35 s after Enter, 3.7 s
+  in total (connect 1.3 s, typing 2.0 s).
+- New tests: digits spaced ≥ 0.5 s with Enter last and a short hold; a dropped
+  digit that tuned another channel is retyped once and then confirmed; no
+  retype after the TV left the Samsung TV source; a number the TV does not
+  have is typed twice, then reported; remote client spaces keys on one
+  connection with the hold after the last key; a failure after a digit
+  reports it was sent.
+- Mutation checks (each caught): no Enter; 0.3 s gap; no retype; retype after
+  leaving the source; remote ignores the gap; remote ignores the hold.
+
 # Validation for version 2.7.0
 
 Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:

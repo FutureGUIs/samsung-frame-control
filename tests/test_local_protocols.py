@@ -175,3 +175,44 @@ async def test_remote_key_connection_stays_open_after_sending():
     assert events == [("sleep", remote.KEY_HOLD_OPEN, True, False)]
     assert remote.KEY_HOLD_OPEN >= 1
     assert socket.closed
+
+
+async def test_typed_number_is_spaced_on_one_connection():
+    """Digits closer than ~0.5 s were dropped by a 2020 Frame; Enter tunes."""
+    socket = Socket({"event": "ms.channel.connect"})
+    session = SimpleNamespace(ws_connect=AsyncMock(return_value=socket))
+    events = []
+
+    async def sleep(seconds):
+        events.append((len(socket.sent), seconds, socket.closed))
+
+    client = remote.AsyncRemoteClient(session, "192.0.2.1", "t", Mock())
+    with patch.object(remote.asyncio, "sleep", sleep):
+        await client.send_keys(["KEY_1", "KEY_4", "KEY_ENTER"], gap=0.6, hold=0.5)
+    assert [m["params"]["DataOfCmd"] for m in socket.sent] == [
+        "KEY_1",
+        "KEY_4",
+        "KEY_ENTER",
+    ]
+    # Gap after each key but the last, then the hold; one connection.
+    assert events == [(1, 0.6, False), (2, 0.6, False), (3, 0.5, False)]
+    assert session.ws_connect.await_count == 1
+    assert socket.closed
+
+
+async def test_failure_after_a_digit_reports_it_was_sent():
+    socket = Socket({"event": "ms.channel.connect"})
+    session = SimpleNamespace(ws_connect=AsyncMock(return_value=socket))
+    original = socket.send_json
+
+    async def fail_second(data):
+        if socket.sent:
+            raise aiohttp.ClientError("gone")
+        await original(data)
+
+    socket.send_json = fail_second
+    client = remote.AsyncRemoteClient(session, "192.0.2.1", "t", Mock())
+    with patch.object(remote.asyncio, "sleep", AsyncMock()):
+        with pytest.raises(ArtError) as raised:
+            await client.send_keys(["KEY_1", "KEY_4"])
+    assert raised.value.sent is True
