@@ -6,7 +6,7 @@ import pytest
 from frame_fakes import DOMAIN, refresh
 from homeassistant.components.media_player import ATTR_INPUT_SOURCE
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN
-from homeassistant.core import State
+from homeassistant.core import State, callback
 from homeassistant.helpers import issue_registry as ir
 from pytest_homeassistant_custom_component.common import (
     mock_restore_cache_with_extra_data,
@@ -508,6 +508,10 @@ async def test_off_to_input_skips_reassert_when_ip_control_confirms_on(
 def record_activity(hass):
     seen = []
 
+    # A callback runs in the event loop, in order. A plain function would be
+    # run in worker threads, and under load could record states out of order
+    # (the intermittent failure of the activity tests).
+    @callback
     def changed(event):
         new = event.data.get("new_state")
         if event.data.get("entity_id") == "sensor.frame_tv_activity" and new:

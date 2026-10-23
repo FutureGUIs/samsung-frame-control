@@ -1,3 +1,27 @@
+# Validation for version 2.8.1
+
+Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:
+
+- **311 automated tests passed** (6 new), three consecutive full runs.
+- Reported on the user's TV with 2.8.0: on the Samsung TV source, a channel
+  change failed with "does not support action media_player.play_media" and
+  worked on a second try. Cause: `_read_ipc` cleared `input_confirmed` before
+  awaiting the TV, so the source looked unknown during every read.
+- New tests: the source stays confirmed while an IP Control read is in
+  flight; play/browse offered on HDMI and in Art Mode with IP Control and not
+  without it; playing a channel from HDMI sends KEY_TV first, then the digits;
+  from Art Mode leaves Art; on Samsung TV does not switch; after switching,
+  waits while IP Control is still starting (5 timed-out reads) and then tunes.
+- Mutation checks (each caught): the 2.8.0 read gap; no switch to Samsung TV;
+  no wait for the source; channel actions only on the Samsung TV source; a
+  failed read keeping the confirmation.
+- Intermittent test failure found and fixed: the activity tests recorded
+  sensor changes with a plain-function event listener, which Home Assistant
+  runs in worker threads, so under load the recorded order could be wrong
+  (`test_activity_for_power_off_and_failures_returns_to_idle`, seen once each
+  in the 2.5.1 and 2.8.0 runs and once here). It is now a `@callback`. A test
+  issue only; the integration's activity reporting was correct.
+
 # Validation for version 2.8.0
 
 Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:

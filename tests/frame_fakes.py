@@ -57,6 +57,7 @@ class FakeTV:
         # Measured: after IP Control powerOff the TV stays reachable, and the
         # Art channel keeps reporting the remembered Art setting.
         self.ipc_power_on_works = True
+        self.ipc_starting_reads = 0  # reads that time out (IP Control starting)
         self.art_delay = 0.0  # seconds per Art request (slow firmware/timeouts)
         # IP Control artModeControl: None = not implemented, else number of
         # "failed" answers before the setter works (TV still starting).
@@ -120,6 +121,10 @@ class FakeTV:
             raise IpcError("refused" if self.refuses else "timeout")
         if self.ipc_error:
             raise IpcError(self.ipc_error)
+        if self.ipc_starting_reads:
+            # IP Control starts ~20 s after the rest of the TV wakes.
+            self.ipc_starting_reads -= 1
+            raise IpcError("timeout")
         if self.ipc_power != "powerOn":
             return self.ipc_power, {}
         states = {

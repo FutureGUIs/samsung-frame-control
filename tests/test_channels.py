@@ -221,14 +221,67 @@ async def test_play_media_tunes_a_channel(hass, setup, tv):
     assert len(tv.key_batches) == 1
 
 
-async def test_play_and_browse_only_on_samsung_tv(hass, setup, tv, entry):
+async def test_play_and_browse_offered_from_any_state_with_ip_control(
+    hass, setup, tv, entry
+):
     tv.art, tv.ipc_input = "off", "HDMI1"
     await setup(ip_control=True)
-    assert not F(hass.states.get(PLAYER).attributes["supported_features"]) & CHANNEL
+    assert CHANNEL in F(hass.states.get(PLAYER).attributes["supported_features"])
     tv.art = "on"
     entry.runtime_data._last_art_refresh = 0
     await refresh(hass, entry)
+    assert CHANNEL in F(hass.states.get(PLAYER).attributes["supported_features"])
+
+
+async def test_no_play_or_browse_without_ip_control(hass, setup, tv):
+    on_samsung_tv(tv)
+    await setup()
     assert not F(hass.states.get(PLAYER).attributes["supported_features"]) & CHANNEL
+
+
+async def test_play_channel_from_hdmi_switches_to_samsung_tv_first(hass, setup, tv):
+    tv.art, tv.ipc_input = "off", "HDMI1"
+    await setup(ip_control=True)
+    await play(hass, "1114")
+    assert tv.keys[0] == "KEY_TV"  # Samsung TV source first
+    assert tv.key_batches[-1] == ["KEY_1", "KEY_1", "KEY_1", "KEY_4", "KEY_ENTER"]
+    assert tv.ipc_input == "TV"
+    assert tv.ipc_channel == "1114"
+
+
+async def test_play_channel_from_art_mode_leaves_art(hass, setup, tv):
+    tv.ipc_input = "HDMI2"  # Art Mode in front of HDMI 2
+    await setup(ip_control=True)
+    await play(hass, "1114")
+    assert tv.art == "off"
+    assert tv.ipc_input == "TV"
+    assert tv.ipc_channel == "1114"
+
+
+async def test_play_channel_on_samsung_tv_does_not_switch(hass, setup, tv):
+    on_samsung_tv(tv)
+    await setup(ip_control=True)
+    await play(hass, "1114")
+    assert "KEY_TV" not in tv.keys
+    assert tv.ipc_channel == "1114"
+
+
+async def test_source_stays_confirmed_while_ip_control_is_read(hass, setup, tv, entry):
+    """2.8.0 cleared it at the start of every read: actions briefly vanished."""
+    on_samsung_tv(tv)
+    await setup(ip_control=True)
+    controller = entry.runtime_data
+    seen = []
+    original = tv.ipc_read_state
+
+    def watching(client):
+        seen.append(controller.on_tv_source())  # while the read is in flight
+        return original(client)
+
+    tv.ipc_read_state = watching
+    await refresh(hass, entry)
+    await refresh(hass, entry)
+    assert seen and all(seen)
 
 
 async def test_browse_channels_by_genre(hass, hass_ws_client, setup, tv):
@@ -346,3 +399,21 @@ async def test_remote_connection_closed_when_the_tv_turns_off(hass, setup, tv, e
         tv.ipc_power = "powerOff"
         await refresh(hass, entry)
         close.assert_awaited()
+
+
+async def test_play_channel_waits_for_ip_control_after_switching(
+    hass, setup, tv, entry
+):
+    tv.art, tv.ipc_input = "off", "HDMI1"
+    await setup(ip_control=True)
+    original = tv.send_key
+
+    async def starting_after_tv_key(client, key):
+        await original(client, key)
+        if key == "KEY_TV":
+            tv.ipc_starting_reads = 5  # IP Control slow to answer again
+
+    tv.send_key = starting_after_tv_key
+    await play(hass, "1114")
+    assert tv.ipc_input == "TV"
+    assert tv.ipc_channel == "1114"

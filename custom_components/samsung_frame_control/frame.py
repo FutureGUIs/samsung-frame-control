@@ -46,6 +46,7 @@ CHANNEL_READBACK = 4  # IP Control reads, 1 s apart, after a channel key
 DIGIT_GAP = 0.6
 TUNE_POLL = 0.25  # seconds between IP Control reads while the TV tunes
 TUNE_WAIT = 4.0  # seconds to wait for the new channel per entry
+SOURCE_WAIT = 30  # seconds for IP Control to report Samsung TV after switching
 TUNE_ENTRIES = 2  # a finished entry that tuned the wrong channel is retyped once
 THUMBNAIL_CACHE = 8  # artwork thumbnails kept (about 30 KB each)
 ARTWORK_WRITES = ("random_artwork", *STEP_KEYS)
@@ -278,19 +279,24 @@ class FrameController:
         Also records the observed input and audio snapshot. Errors only make
         the input unconfirmed (the last value is kept, e.g. during the ~20 s
         after wake when IP Control starts later than the other services).
+        The confirmation changes only when the read finishes: a read in
+        progress must not make the source look unknown (2.8.0 briefly hid the
+        channel actions during every read).
         """
-        self.input_confirmed = False
         if self.ipc is None or self.ipc_auth_failed:
+            self.input_confirmed = False
             return None
         try:
             power, states = await self._executor(self.ipc.read_state)
         except IpcError as err:
+            self.input_confirmed = False
             self.ipc_error = err.code
             if err.code == "unauthorized":
                 # Stop polling with a rejected token; a repair issue asks to re-pair.
                 self.ipc_auth_failed = True
             return None
         self.ipc_error = None
+        self.input_confirmed = False
         if power not in ("powerOn", "powerOff"):
             return None
         self._ipc_states = states
@@ -811,7 +817,21 @@ class FrameController:
             and self.input_reported == "TV"
         )
 
-    async def async_tune_channel(self, number: str) -> None:
+    async def async_play_channel(self, number: str) -> None:
+        """Watch a channel from any state: switch to Samsung TV first if needed."""
+        number = str(number).strip()
+        if not number.isdigit() or not 0 < len(number) <= 5:
+            raise FrameError("invalid_value", stage="channel")
+        if not self._ipc_usable():
+            raise FrameError("needs_ip_control", stage="channel")
+        if not self.on_tv_source():
+            await self.async_select_input("tv")
+            # IP Control can answer ~20 s after a wake; wait for the source.
+            await self.async_tune_channel(number, source_wait=SOURCE_WAIT)
+            return
+        await self.async_tune_channel(number)
+
+    async def async_tune_channel(self, number: str, source_wait: float = 0) -> None:
         """Type a channel number on the Samsung TV source, then read it back.
 
         IP Control's channel setter is refused by a 2020 Frame (-32602);
@@ -825,7 +845,12 @@ class FrameController:
                 raise FrameError("needs_ip_control", stage="channel")
             if self.controls.power_state == "off" or not await port_open(self.host):
                 raise FrameError("tv_off", stage="channel")
+            waited = 0.0
             await self._read_ipc()
+            while not self.on_tv_source() and waited < source_wait:
+                await asyncio.sleep(1)
+                waited += 1
+                await self._read_ipc()
             if not self.on_tv_source():
                 raise FrameError("not_tv_source", stage="channel")
             if self.channel == number:

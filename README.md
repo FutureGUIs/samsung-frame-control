@@ -151,7 +151,9 @@ With IP Control paired, on the Samsung TV source:
 - **Channel** select (`select.frame_tv_channel`): every channel by number and
   name, following the TV. Choosing one types its number on the TV (about 3
   seconds) and confirms the change.
-- **Browse media** on the media player lists the channels by genre.
+- **Browse media** on the media player lists the channels by genre. Playing a
+  channel from there, or with `media_player.play_media`, also works from HDMI,
+  Art Mode or off: the TV switches to Samsung TV first.
 - Previous / Next are channel down / up.
 - In automations:
 

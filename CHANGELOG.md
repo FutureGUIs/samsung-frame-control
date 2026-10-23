@@ -3,6 +3,21 @@
 Newest first. Measurements refer to the author's QN55LS03T (2020 Frame) unless
 noted. Technical validation for each release is in [VALIDATION.md](VALIDATION.md).
 
+## 2.8.1 — Channel actions no longer vanish; play a channel from any input
+
+- **Fixed:** "does not support action media_player.play_media" on the Samsung
+  TV source, which worked on a second try. Each IP Control read first marked
+  the input unconfirmed and confirmed it again only when the TV answered, so
+  for that moment (every 15 s, and four times a second while confirming a
+  channel change) the media player looked as if it was not on Samsung TV and
+  the channel actions disappeared. The input now stays confirmed until a read
+  finishes, and changes only with its result.
+- **Play a channel from any state:** with IP Control paired, `play_media` with
+  a channel and **Browse media** are always offered. Playing a channel while
+  on HDMI, in Art Mode or with the TV off switches to Samsung TV first
+  (waking the TV if needed), waits up to 30 s for IP Control to report it,
+  then tunes.
+
 ## 2.8.0 — Samsung TV Plus channel list by country, with logos
 
 - **Download from Samsung (optional):** when adding a TV, choose whether to

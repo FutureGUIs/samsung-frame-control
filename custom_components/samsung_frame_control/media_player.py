@@ -194,8 +194,11 @@ class FrameMediaPlayer(CoordinatorEntity, RestoreEntity, MediaPlayerEntity):
             if self._slideshow_interval() is not None:
                 features |= SLIDESHOW_FEATURES
         elif self._on_tv_source():
-            # Confirmed only through IP Control, which tuning also needs.
-            features |= STEP_FEATURES | CHANNEL_FEATURES
+            features |= STEP_FEATURES
+        if self._controller.ipc is not None:
+            # Play a channel or browse from any state: playing one switches to
+            # the Samsung TV source first (confirmed through IP Control).
+            features |= CHANNEL_FEATURES
         return features
 
     def _artwork(self) -> str | None:
@@ -293,7 +296,7 @@ class FrameMediaPlayer(CoordinatorEntity, RestoreEntity, MediaPlayerEntity):
             raise HomeAssistantError("Only Samsung TV channels can be played.")
         await self._run(
             "channel",
-            self._controller.async_tune_channel(str(media_id)),
+            self._controller.async_play_channel(str(media_id)),
             refresh=False,
         )
 
