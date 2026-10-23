@@ -14,6 +14,12 @@ async def async_get_config_entry_diagnostics(hass, entry):
             ),
             "named_channels": len(entry.options.get("channel_names", {})),
             "channel": getattr(controller, "channel", None),
+            "channel_lineup": {
+                "effective": getattr(controller, "channel_list", {}).get("effective"),
+                "channels": len(
+                    getattr(controller, "channel_list", {}).get("channels", {})
+                ),
+            },
             "explicit_off_reported": controller.off_reported,
             "last_command": dict(getattr(controller, "last_command", {})),
         },

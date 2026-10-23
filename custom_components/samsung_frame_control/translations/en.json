@@ -117,6 +117,7 @@
           "checking_input": "Checking input",
           "powering_off": "Powering off",
           "sending_key": "Sending remote key",
+          "changing_channel": "Changing channel",
           "changing_setting": "Changing Art setting"
         }
       }

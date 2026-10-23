@@ -11,7 +11,8 @@ integration and no YAML.
   volume.
 - **Art Mode:** the artwork on screen as the player's picture, Next/Previous
   artwork, and Play/Pause for the slideshow.
-- **Samsung TV:** the channel number, your own channel names, and channel
+- **Samsung TV:** the channel number and name (the Samsung TV Plus line-up is
+  built in), a channel selector, browsing channels by genre, and channel
   up/down.
 - **Art settings:** artwork, brightness, color temperature, motion sensor,
   slideshow and mat controls, discovered from what your TV supports.
@@ -93,8 +94,9 @@ Under **Configure**:
 - **Input names:** name or hide Samsung TV and HDMI 1–4. Samsung publishes the
   names you set on the TV only through its cloud, so they cannot be read
   locally. Clear a name to hide that input.
-- **Channel names:** one per line, for example `2110 = Pluto News`. The TV does
-  not report channel names locally; named channels show as *2110 · Pluto News*.
+- **Channel names:** one per line, for example `2110 = Pluto News`. They take
+  priority over the built-in Samsung TV Plus names and can add channels the
+  line-up does not have (antenna channels, for example).
 - **Pair IP Control / Remove IP Control pairing.**
 
 ## The media player
@@ -127,6 +129,34 @@ never becomes unavailable, so Turn on always works.
 `last_known`, `unreachable`, …) and `source_confirmed` (the source was read from
 the TV in the latest poll).
 
+## Samsung TV channels
+
+With IP Control paired, on the Samsung TV source:
+
+- The media player shows the channel as *2110 · America's Test Kitchen*, with
+  its genre in the `channel_genre` attribute. Names come from the Samsung TV
+  Plus U.S. line-up shipped with the integration (`channels_us.json`); nothing
+  is fetched online. A channel that is not in it shows its number.
+- **Channel** select (`select.frame_tv_channel`): every channel by number and
+  name, following the TV. Choosing one types its number on the TV and confirms
+  the change.
+- **Browse media** on the media player lists the channels by genre.
+- Previous / Next are channel down / up.
+- In automations:
+
+  ```yaml
+  action: media_player.play_media
+  target:
+    entity_id: media_player.frame_tv
+  data:
+    media_content_type: channel
+    media_content_id: "2110"
+  ```
+
+Samsung changes the line-up from time to time; the built-in list is updated
+with new releases, and `tools/stvp_channels.py` rebuilds it from Samsung's
+published PDF.
+
 ## Other entities
 
 | Entity | Behavior |
@@ -134,7 +164,8 @@ the TV in the latest poll).
 | Artwork select | Chooses a piece from the TV's catalog |
 | Random artwork button | Picks another piece from the catalog |
 | Current artwork sensor | Content ID of the piece on screen, with mat and category |
-| Activity sensor | What a running command is doing: Waking TV, Starting Art app, Switching input, … then Idle |
+| Channel select | Samsung TV channel by number and name (with IP Control) |
+| Activity sensor | What a running command is doing: Waking TV, Starting Art app, Switching input, Changing channel, … then Idle |
 | Art brightness, color temperature, motion sensitivity numbers | Ranges as reported by the TV |
 | Art automatic brightness switch | The TV's Art brightness sensor |
 | Sleep after no motion, slideshow interval / order / category, mat style / color selects | Values reported by the TV |
@@ -209,10 +240,11 @@ python tools/frame_probe.py pair 192.168.1.50       # one-time IP Control pairin
 python tools/frame_probe.py watch 192.168.1.50      # print changes as you use the remote
 python tools/frame_probe.py thumbnail 192.168.1.50  # save the current artwork's thumbnail
 python tools/frame_probe.py slideshow 192.168.1.50  # which slideshow request the TV answers
+python tools/frame_probe.py try-channel 192.168.1.50 2111  # how the TV accepts a channel number
 ```
 
 `check`, `pair`, `watch`, `thumbnail` and `slideshow` never change a TV
-setting. Reports redact tokens, MAC addresses and device IDs; the saved token
+setting; `try-channel` changes the channel. Reports redact tokens, MAC addresses and device IDs; the saved token
 file should be treated like a password.
 
 ## How it works

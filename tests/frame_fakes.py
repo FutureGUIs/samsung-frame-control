@@ -86,6 +86,13 @@ class FakeTV:
         }
         self.thumbnail_calls = []
         self.thumbnail_error = None
+        # Typed channel numbers: the TV tunes once this many digits arrive
+        # (four on Samsung TV Plus), unless the number is not in the line-up.
+        self.channel_digits = 4
+        self.missing_channels = set()
+        self._typed = ""
+        self.key_batches = []  # keys sent over one connection
+        self.keys_error = None  # raised by send_keys (e.g. ArtError(sent=...))
 
     # -- REST power and TCP reachability --------------------------------
     async def read_power(self, session, host):
@@ -243,6 +250,14 @@ class FakeTV:
             return {}
         raise ArtError("rejected", sent=True)
 
+    async def send_keys(self, client, keys):
+        self.key_batches.append(list(keys))
+        if self.keys_error:
+            error, self.keys_error = self.keys_error, None
+            raise error
+        for key in keys:
+            await self.send_key(client, key)
+
     async def thumbnail(self, client, content_id):
         from custom_components.samsung_frame_control.async_art import ArtError
 
@@ -263,6 +278,12 @@ class FakeTV:
         reported = {"KEY_TV": "TV", **{f"KEY_HDMI{n}": f"HDMI{n}" for n in range(1, 5)}}
         if self.keys_switch_input and key in reported:
             self.ipc_input = reported[key]
+        if len(key) == 5 and key[4].isdigit():
+            self._typed += key[4]
+            if len(self._typed) == self.channel_digits:
+                if self.ipc_input == "TV" and self._typed not in self.missing_channels:
+                    self.ipc_channel = self._typed
+                self._typed = ""
         if key in ("KEY_CHUP", "KEY_CHDOWN") and self.ipc_input == "TV":
             self.ipc_channel = str(
                 int(self.ipc_channel) + (1 if key == "KEY_CHUP" else -1)

@@ -1,3 +1,36 @@
+# Validation for version 2.7.0
+
+Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:
+
+- **268 automated tests passed** (21 new), three consecutive full runs.
+- On the user's TV (QN55LS03T), `tools/frame_probe.py try-channel` from 2111
+  to 1114: IP Control `directChannelControl` with the reported fields and the
+  new number, and with the number only, both answered -32602 (invalid
+  params); remote keys KEY_1 KEY_1 KEY_1 KEY_4 tuned 1114 without Enter,
+  confirmed by IP Control.
+- Channel list: `tools/stvp_channels.py` on Samsung's "U.S. Channel Lineup,
+  Effective: September 2026" PDF found 590 channels in 20 genres with no
+  unplaced text; eight two-line names joined. Cross-checked against
+  `pdftotext -layout`: same 590 numbers and names (three differences traced
+  to the comparison itself: a "3000" inside a name, a missed pattern, and a
+  wrapped "by History" belonging to channel 3544).
+- New tests: shipped line-up well formed; missing or broken file gives no
+  names; select lists channels, follows remote changes, types one number over
+  one connection and reads it back; unavailable on HDMI and in Art Mode; not
+  created without IP Control; user names win and add channels; a current
+  channel outside the line-up stays selectable; a number the TV does not have
+  is reported after typing once; a partly typed number is never retyped; a
+  connection failing before any key is retried; no keys when already on the
+  channel; refused when the TV left the Samsung TV source; play_media tunes,
+  rejects non-numbers and other media types; play/browse only on Samsung TV;
+  browse by genre over the websocket API; diagnostics show the line-up;
+  scraper layout parsing (columns, two-line names, genre across pages,
+  disclaimer, unplaced text and numbers).
+- Mutation checks (each caught): retry after partial typing; no read-back;
+  no Samsung TV source check; retyping the current channel; one connection
+  per digit; built-in name over the user's; channel features on every source;
+  no two-line join; genre reset per page; select always available.
+
 # Validation for version 2.6.2
 
 Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:

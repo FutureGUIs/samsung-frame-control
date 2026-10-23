@@ -23,6 +23,7 @@ the integration does, waits up to 10 s each and records every Art message:
 These commands DO act on the TV, to find out what works on your firmware:
   python frame_probe.py try-input 192.168.1.50 HDMI2   try each input method
   python frame_probe.py try-power-off 192.168.1.50     IP Control power-off
+  python frame_probe.py try-channel 192.168.1.50 2111  tune a channel on Samsung TV
   python frame_probe.py key 192.168.1.50 KEY_SOURCE    send one remote key
 Remote keys use the TV's remote channel; the first one shows an "allow
 Frame Probe" prompt on the TV.
@@ -1023,6 +1024,91 @@ def cmd_try_input(host, target):
     return report_input_test(results, "hdmi_cycle" if target in sequence else None)
 
 
+def current_channel(client):
+    answer = client.call("directChannelControl")
+    result = answer.get("result")
+    if isinstance(result, dict):
+        return str(result.get("channelNum") or "").strip(), result
+    return None, answer.get("error")
+
+
+def wait_for_channel(client, target, seconds=8):
+    deadline = time.monotonic() + seconds
+    seen, _ = current_channel(client)
+    while seen != target and time.monotonic() < deadline:
+        time.sleep(1.5)
+        seen, _ = current_channel(client)
+    return seen
+
+
+def cmd_try_channel(host, target):
+    client = ipc_client(host)
+    if not client:
+        return 1
+    target = str(target).strip()
+    if not target.isdigit():
+        print("Give a channel number, for example 2111.")
+        return 1
+    if current_input(client) != "TV":
+        print("Switch the TV to the Samsung TV source (normal viewing) first.")
+        return 1
+    start, details = current_channel(client)
+    print(f"Current channel: {start} ({details}). Target: {target}\n")
+    if start is None or start == target:
+        print("Pick a channel other than the current one.")
+        return 1
+    results = {"start": start, "start_details": details, "target": target}
+    setters = [
+        ("ip_control_full", {**details, "channelNum": target}),
+        ("ip_control_number", {"channelNum": target}),
+    ]
+    for step, (name, params) in enumerate(setters, 1):
+        print(f"{step}. IP Control directChannelControl {params} ...")
+        answer = client.call("directChannelControl", params=params)
+        seen = (
+            wait_for_channel(client, target)
+            if "result" in answer
+            else current_channel(client)[0]
+        )
+        results[name] = {"params": params, "answer": answer, "channel_after": seen}
+        print(
+            f"   answer: {answer.get('result', answer.get('error'))}; channel now: {seen}"
+        )
+        if seen == target:
+            return report_channel_test(results, name)
+        if seen != start:
+            # Moved somewhere else: retune the start before the next method.
+            start = seen
+    digits = [f"KEY_{digit}" for digit in target]
+    print(f"3. Remote keys {' '.join(digits)} ...")
+    try:
+        send_keys(host, digits)
+        seen = wait_for_channel(client, target)
+        results["digit_keys"] = {"keys": digits, "channel_after": seen}
+        print(f"   channel now: {seen}")
+        if seen == target:
+            return report_channel_test(results, "digit_keys")
+        print("4. Remote key KEY_ENTER (confirm the typed number) ...")
+        send_keys(host, ["KEY_ENTER"])
+        seen = wait_for_channel(client, target)
+        results["digit_keys_enter"] = {"channel_after": seen}
+        print(f"   channel now: {seen}")
+        if seen == target:
+            return report_channel_test(results, "digit_keys_enter")
+    except (RemoteError, OSError) as err:
+        results["digit_keys_error"] = str(err)
+        print(f"   remote channel failed: {err}")
+    return report_channel_test(results, None)
+
+
+def report_channel_test(results, worked):
+    results["worked"] = worked
+    path = HERE / "frame_probe_channel_test.json"
+    path.write_text(json.dumps(redact(results), indent=2))
+    print(f"\nResult: {worked or 'no method tuned the channel'}. Saved to {path}")
+    return 0
+
+
 def report_input_test(results, worked):
     results["worked"] = worked
     path = HERE / "frame_probe_input_test.json"
@@ -1081,6 +1167,7 @@ def main(argv=None):
             "slideshow",
             "try-input",
             "try-power-off",
+            "try-channel",
             "key",
         ),
     )
@@ -1100,10 +1187,12 @@ def main(argv=None):
         return cmd_thumbnail(args.host, args.arg)
     if args.command == "slideshow":
         return cmd_slideshow(args.host)
-    if args.command in ("try-input", "key") and not args.arg:
+    if args.command in ("try-input", "key", "try-channel") and not args.arg:
         parser.error(f"{args.command} needs an input or key, e.g. HDMI2 or KEY_SOURCE")
     if args.command == "try-input":
         return cmd_try_input(args.host, args.arg)
+    if args.command == "try-channel":
+        return cmd_try_channel(args.host, args.arg)
     if args.command == "try-power-off":
         return cmd_try_power_off(args.host)
     if args.command == "key":

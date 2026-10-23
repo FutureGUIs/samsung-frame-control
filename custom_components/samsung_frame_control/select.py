@@ -1,9 +1,14 @@
 """Artwork, slideshow, motion timer, and current artwork's mat."""
 
 from homeassistant.components.select import SelectEntity
+from homeassistant.const import CONF_MAC
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .entity import ArtEntity, add_supported
+from .channels import channel_label, channel_names
+from .const import CONF_CHANNEL_NAMES, CONF_IPC_TOKEN
+from .entity import ArtEntity, add_supported, command_error, device_info
+from .frame import FrameError
 
 SELECTS = (
     ("artwork", "Artwork", "mdi:image"),
@@ -24,6 +29,57 @@ LABELS = {
 
 async def async_setup_entry(hass, entry, async_add_entities):
     add_supported(entry, async_add_entities, SELECTS, ArtSelect)
+    if entry.data.get(CONF_IPC_TOKEN):
+        # Tuning is confirmed through IP Control, so it needs pairing.
+        async_add_entities([ChannelSelect(entry)])
+
+
+class ChannelSelect(CoordinatorEntity, SelectEntity):
+    """Samsung TV channel by number and name; available on the TV source."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Channel"
+    _attr_icon = "mdi:television-guide"
+
+    def __init__(self, entry):
+        super().__init__(entry.runtime_data.coordinator)
+        self._controller = entry.runtime_data
+        self._attr_unique_id = f"{entry.data[CONF_MAC]}_tv_channel"
+        self._attr_device_info = device_info(entry)
+        self._user_names = dict(entry.options.get(CONF_CHANNEL_NAMES, {}))
+
+    @property
+    def _channels(self):
+        return channel_names(self._controller, self._user_names)
+
+    @property
+    def available(self):
+        return self._controller.on_tv_source()
+
+    @property
+    def options(self):
+        channels = self._channels
+        labels = [channel_label(number, channels) for number in channels]
+        current = self._controller.channel
+        if current and current not in channels:
+            labels.insert(0, current)  # a channel not in the line-up
+        return labels
+
+    @property
+    def current_option(self):
+        current = self._controller.channel
+        if not current or not self._controller.on_tv_source():
+            return None
+        return channel_label(current, self._channels)
+
+    async def async_select_option(self, option):
+        number = option.split(" ", 1)[0]
+        try:
+            await self._controller.async_tune_channel(number)
+        except FrameError as err:
+            raise command_error(err, "channel") from err
+        finally:
+            self.coordinator.push_update()
 
 
 class ArtSelect(ArtEntity, SelectEntity):

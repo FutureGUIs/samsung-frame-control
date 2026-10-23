@@ -11,6 +11,9 @@ import hashlib
 from typing import Any
 
 from homeassistant.components.media_player import (
+    BrowseError,
+    BrowseMedia,
+    MediaClass,
     MediaPlayerDeviceClass,
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
@@ -22,6 +25,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .channels import channel_label, channel_names
 from .const import (
     CONF_CHANNEL_NAMES,
     DEFAULT_INPUT_NAMES,
@@ -44,6 +48,11 @@ STEP_FEATURES = (
     MediaPlayerEntityFeature.NEXT_TRACK | MediaPlayerEntityFeature.PREVIOUS_TRACK
 )
 SLIDESHOW_FEATURES = MediaPlayerEntityFeature.PLAY | MediaPlayerEntityFeature.PAUSE
+CHANNEL_FEATURES = (
+    MediaPlayerEntityFeature.PLAY_MEDIA | MediaPlayerEntityFeature.BROWSE_MEDIA
+)
+BROWSE_ROOT = "channels"
+BROWSE_GENRE = "genre:"
 VOLUME_FEATURES = (
     MediaPlayerEntityFeature.VOLUME_SET
     | MediaPlayerEntityFeature.VOLUME_MUTE
@@ -170,13 +179,7 @@ class FrameMediaPlayer(CoordinatorEntity, RestoreEntity, MediaPlayerEntity):
         return self._controls.values.get("slideshow_interval")
 
     def _on_tv_source(self) -> bool:
-        controller = self._controller
-        return (
-            self._controls.power_state == "on"
-            and self._controls.values.get("art_mode") != "on"
-            and controller.input_confirmed
-            and controller.input_reported == "TV"
-        )
+        return self._controller.on_tv_source()
 
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
@@ -190,7 +193,8 @@ class FrameMediaPlayer(CoordinatorEntity, RestoreEntity, MediaPlayerEntity):
             if self._slideshow_interval() is not None:
                 features |= SLIDESHOW_FEATURES
         elif self._on_tv_source():
-            features |= STEP_FEATURES
+            # Confirmed only through IP Control, which tuning also needs.
+            features |= STEP_FEATURES | CHANNEL_FEATURES
         return features
 
     def _artwork(self) -> str | None:
@@ -263,12 +267,81 @@ class FrameMediaPlayer(CoordinatorEntity, RestoreEntity, MediaPlayerEntity):
         return self._channel()
 
     @property
+    def _channels(self) -> dict[str, dict]:
+        return channel_names(self._controller, self._channel_names)
+
+    @property
     def media_title(self) -> str | None:
         number = self._channel()
         if number is None:
             return None
-        name = self._channel_names.get(number)
-        return f"{number} · {name}" if name else number
+        return channel_label(number, self._channels)
+
+    async def async_play_media(self, media_type, media_id, **kwargs) -> None:
+        if str(media_type) not in (MediaType.CHANNEL, "channel"):
+            raise HomeAssistantError("Only Samsung TV channels can be played.")
+        await self._run(
+            "channel",
+            self._controller.async_tune_channel(str(media_id)),
+            refresh=False,
+        )
+
+    async def async_browse_media(
+        self, media_content_type=None, media_content_id=None
+    ) -> BrowseMedia:
+        """Channels by genre, from the built-in line-up and your own names."""
+        channels = self._channels
+        genres: dict[str, list[str]] = {}
+        for number, info in channels.items():
+            genres.setdefault(info.get("genre") or "Other channels", []).append(number)
+        if media_content_id in (None, "", BROWSE_ROOT):
+            lineup = self._controller.channel_list
+            title = "Samsung TV channels"
+            if lineup.get("effective"):
+                title += f" ({lineup['effective']})"
+            return BrowseMedia(
+                media_class=MediaClass.DIRECTORY,
+                media_content_id=BROWSE_ROOT,
+                media_content_type=MediaType.CHANNELS,
+                title=title,
+                can_play=False,
+                can_expand=True,
+                children_media_class=MediaClass.DIRECTORY,
+                children=[
+                    BrowseMedia(
+                        media_class=MediaClass.DIRECTORY,
+                        media_content_id=BROWSE_GENRE + genre,
+                        media_content_type=MediaType.CHANNELS,
+                        title=f"{genre} ({len(numbers)})",
+                        can_play=False,
+                        can_expand=True,
+                    )
+                    for genre, numbers in genres.items()
+                ],
+            )
+        genre = str(media_content_id).removeprefix(BROWSE_GENRE)
+        if not str(media_content_id).startswith(BROWSE_GENRE) or genre not in genres:
+            raise BrowseError(f"Unknown channel folder: {media_content_id}")
+        return BrowseMedia(
+            media_class=MediaClass.DIRECTORY,
+            media_content_id=media_content_id,
+            media_content_type=MediaType.CHANNELS,
+            title=genre,
+            can_play=False,
+            can_expand=True,
+            children_media_class=MediaClass.CHANNEL,
+            children=[
+                BrowseMedia(
+                    media_class=MediaClass.CHANNEL,
+                    media_content_id=number,
+                    media_content_type=MediaType.CHANNEL,
+                    title=channel_label(number, channels),
+                    can_play=True,
+                    can_expand=False,
+                )
+                for number in genres[genre]
+            ],
+        )
 
     @property
     def media_content_type(self) -> str | None:
@@ -285,6 +358,11 @@ class FrameMediaPlayer(CoordinatorEntity, RestoreEntity, MediaPlayerEntity):
         }
         if source is not None:
             attributes["source_confirmed"] = confirmed
+        number = self._channel()
+        if number is not None and (
+            genre := self._channels.get(number, {}).get("genre")
+        ):
+            attributes["channel_genre"] = genre
         return attributes
 
     @property

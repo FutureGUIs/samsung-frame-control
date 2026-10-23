@@ -38,5 +38,6 @@ ACTIVITIES = (
     "checking_input",
     "powering_off",
     "sending_key",
+    "changing_channel",
     "changing_setting",
 )

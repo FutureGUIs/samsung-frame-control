@@ -38,6 +38,9 @@ COMMAND_ERRORS = {
     "rejected": "The TV rejected this command.",
     "invalid_value": "The TV does not accept this value.",
     "invalid_response": "The TV returned an unreadable response.",
+    "needs_ip_control": "Choosing a channel needs IP Control to confirm it. Pair IP Control under Configure.",
+    "not_tv_source": "Switch to the Samsung TV source before choosing a channel.",
+    "channel_unconfirmed": "The channel number was typed, but the TV still reports a different channel. The number may not exist in your line-up.",
 }
 
 

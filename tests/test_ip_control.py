@@ -641,16 +641,23 @@ async def test_channel_shown_on_samsung_tv_and_follows_changes(hass, setup, tv, 
     tv.art, tv.ipc_input = "off", "TV"
     await setup(ip_control=True)
     assert source(hass) == ("Samsung TV", True)
-    assert media(hass) == ("2110", "2110")
+    # Names from the built-in Samsung TV Plus line-up.
+    assert media(hass) == ("2110", "2110 · America's Test Kitchen")
     assert hass.states.get(ENTITY).attributes["media_content_type"] == "channel"
+    assert hass.states.get(ENTITY).attributes["channel_genre"] == "Home & Food"
     tv.ipc_channel = "2111"  # changed with the remote
     await refresh(hass, entry)
-    assert media(hass) == ("2111", "2111")
+    assert media(hass) == ("2111", "2111 · BuzzFeed Tasty")
+    tv.ipc_channel = "9"  # not in the line-up: number only
+    await refresh(hass, entry)
+    assert media(hass) == ("9", "9")
+    assert "channel_genre" not in hass.states.get(ENTITY).attributes
 
 
 async def test_channel_name_from_options(hass, setup, tv):
     tv.art, tv.ipc_input = "off", "TV"
     await setup(options={"channel_names": {"2110": "Pluto News"}}, ip_control=True)
+    # Your own name wins over the built-in one.
     assert media(hass) == ("2110", "2110 · Pluto News")
 
 

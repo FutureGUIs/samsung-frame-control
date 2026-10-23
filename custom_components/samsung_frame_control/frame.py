@@ -39,6 +39,7 @@ INPUT_CHECKS = 4
 INPUT_CHECK_DELAY = 1.5
 AUDIO_READBACK_ATTEMPTS = 3
 CHANNEL_READBACK = 4  # IP Control reads, 1 s apart, after a channel key
+TUNE_READBACK = 8  # IP Control reads, 1 s apart, after typing a channel number
 THUMBNAIL_CACHE = 8  # artwork thumbnails kept (about 30 KB each)
 ARTWORK_WRITES = ("random_artwork", *STEP_KEYS)
 _LOGGER = logging.getLogger(__name__)
@@ -226,6 +227,8 @@ class FrameController:
         self.input_confirmed = False  # True only when read in the latest poll
         self._ipc_states = {}
         self.channel = None  # channel number on the TV source, via IP Control
+        # Built-in Samsung TV Plus line-up (channels.load_channels), set at setup.
+        self.channel_list = {"lineup": None, "effective": None, "channels": {}}
         # The TV explicitly reported (or HA commanded) power-off since it was
         # last seen on. Only then does a refused connection mean "standby".
         self.off_reported = False
@@ -783,6 +786,61 @@ class FrameController:
                 if self.channel != before:
                     return
                 await asyncio.sleep(1)
+
+    def on_tv_source(self) -> bool:
+        """The TV shows the Samsung TV source, as read by IP Control this poll."""
+        controls = self.controls
+        return (
+            controls.power_state == "on"
+            and controls.values.get("art_mode") != "on"
+            and self.input_confirmed
+            and self.input_reported == "TV"
+        )
+
+    async def async_tune_channel(self, number: str) -> None:
+        """Type a channel number on the Samsung TV source, then read it back.
+
+        IP Control's channel setter is refused by a 2020 Frame (-32602), but
+        typed digits tune without Enter. Needs IP Control to confirm.
+        """
+        number = str(number).strip()
+        if not number.isdigit() or not 0 < len(number) <= 5:
+            raise FrameError("invalid_value", stage="channel")
+        async with self._command("channel"):
+            if not self._ipc_usable():
+                raise FrameError("needs_ip_control", stage="channel")
+            if self.controls.power_state == "off" or not await port_open(self.host):
+                raise FrameError("tv_off", stage="channel")
+            await self._read_ipc()
+            if not self.on_tv_source():
+                raise FrameError("not_tv_source", stage="channel")
+            if self.channel == number:
+                return
+            self._set_activity("changing_channel")
+            keys = [f"KEY_{digit}" for digit in number]
+            for attempt in range(KEY_ATTEMPTS):
+                if attempt:
+                    await asyncio.sleep(2)
+                try:
+                    async with asyncio.timeout(KEY_TIMEOUT + len(keys)):
+                        await self.remote.send_keys(keys)
+                    break
+                except (TimeoutError, ArtError) as err:
+                    code = getattr(err, "code", "timeout")
+                    sent = getattr(err, "sent", True)
+                    # A partly typed number must never be typed again.
+                    if sent or code not in ("cannot_connect", "timeout"):
+                        raise FrameError(code, stage="channel", sent=sent) from None
+                    if attempt + 1 == KEY_ATTEMPTS:
+                        raise FrameError(code, stage="channel") from None
+            self._step("keys")
+            for _ in range(TUNE_READBACK):
+                await asyncio.sleep(1)
+                await self._read_ipc()
+                if self.channel == number:
+                    self._step("confirmed")
+                    return
+            raise FrameError("channel_unconfirmed", stage="channel", sent=True)
 
     def thumbnail_unavailable(self, content_id) -> bool:
         """True while a failed thumbnail should not be asked for again."""

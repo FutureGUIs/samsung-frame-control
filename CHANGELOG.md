@@ -3,6 +3,29 @@
 Newest first. Measurements refer to the author's QN55LS03T (2020 Frame) unless
 noted. Technical validation for each release is in [VALIDATION.md](VALIDATION.md).
 
+## 2.7.0 — Samsung TV channel names and channel selector
+
+- **Channel names built in:** the Samsung TV Plus U.S. line-up (590 channels,
+  effective September 2026) ships with the integration as
+  `channels_us.json`, so the media player shows *2110 · America's Test
+  Kitchen* without setup, with the genre as `channel_genre`. Names are read
+  from that file only; nothing goes online. Your own **Channel names** still
+  take priority. `tools/stvp_channels.py` regenerates the file from Samsung's
+  published PDF (`pip install pypdf`, then run it).
+- **Channel selector** (`select.frame_tv_channel`, with IP Control paired):
+  lists every channel by number and name, follows the current channel, and is
+  available only on the Samsung TV source. Choosing one types its number on
+  the TV's remote channel (one connection, about a second per digit) and
+  confirms the new channel through IP Control. Measured on a QN55LS03T: IP
+  Control's own channel command is refused (-32602), typed digits tune
+  without Enter.
+- **Media player:** `media_player.play_media` with `media_content_type:
+  channel` and the number tunes a channel, and **Browse media** lists the
+  channels by genre (Samsung TV source only).
+- A number that is not in your TV's line-up is reported as an error after it
+  was typed; a partly typed number is never typed again.
+- New activity: *Changing channel*.
+
 ## 2.6.2 — Channel buttons on Samsung TV
 
 On the Samsung TV source (input confirmed by IP Control) the media player

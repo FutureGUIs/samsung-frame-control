@@ -8,6 +8,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .button import LEGACY_BUTTON_KEYS
+from .channels import load_channels
 from .const import (
     CONF_BROADCAST,
     CONF_IPC_PORT,
@@ -74,6 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         ipc=ipc,
     )
     controller = entry.runtime_data
+    controller.channel_list = await hass.async_add_executor_job(load_channels)
     controller.coordinator = ArtCoordinator(hass, entry, controller)
     # An offline TV must not prevent loading the media player.
     try:

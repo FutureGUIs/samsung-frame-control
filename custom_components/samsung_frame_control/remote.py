@@ -50,6 +50,15 @@ class AsyncRemoteClient:
 
     async def send_key(self, key: str) -> None:
         """Send one Click. Delivery means the TV accepted the frame, nothing more."""
+        await self.send_keys([key])
+
+    async def send_keys(self, keys: list[str]) -> None:
+        """Send Clicks over one connection, one second apart.
+
+        Used for typed channel numbers: the TV tunes after the last digit
+        (verified on a 2020 Frame). `sent` on an error says whether any key
+        reached the TV, so a partly typed number is never resent.
+        """
         query = {"name": base64.b64encode(CLIENT_NAME.encode()).decode()}
         if self.token:
             query["token"] = self.token
@@ -67,19 +76,21 @@ class AsyncRemoteClient:
                 # Samsung uses a self-signed certificate on the local TV.
                 ws = await self.session.ws_connect(url, ssl=False, heartbeat=30)
                 await self._handshake(ws)
-                await ws.send_json(
-                    {
-                        "method": "ms.remote.control",
-                        "params": {
-                            "Cmd": "Click",
-                            "DataOfCmd": key,
-                            "Option": "false",
-                            "TypeOfRemote": "SendRemoteKey",
-                        },
-                    }
-                )
+            for key in keys:
+                async with asyncio.timeout(HANDSHAKE_TIMEOUT):
+                    await ws.send_json(
+                        {
+                            "method": "ms.remote.control",
+                            "params": {
+                                "Cmd": "Click",
+                                "DataOfCmd": key,
+                                "Option": "false",
+                                "TypeOfRemote": "SendRemoteKey",
+                            },
+                        }
+                    )
                 sent = True
-            await asyncio.sleep(KEY_HOLD_OPEN)
+                await asyncio.sleep(KEY_HOLD_OPEN)
         except ArtError:
             raise
         except TimeoutError:

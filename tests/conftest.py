@@ -49,6 +49,11 @@ def tv():
             lambda client, key: fake.send_key(client, key),
         ),
         patch.object(
+            remote.AsyncRemoteClient,
+            "send_keys",
+            lambda client, keys: fake.send_keys(client, keys),
+        ),
+        patch.object(
             ipcontrol.IpControl, "read_state", lambda c: fake.ipc_read_state(c)
         ),
         patch.object(ipcontrol.IpControl, "pair", lambda c: fake.ipc_pair(c)),
