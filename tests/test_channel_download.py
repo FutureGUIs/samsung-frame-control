@@ -25,6 +25,7 @@ pytestmark = pytest.mark.usefixtures("enable_custom_integrations")
 
 PLAYER = "media_player.frame_tv"
 BUTTON = "button.frame_tv_update_channel_list"
+UPDATED = "sensor.frame_tv_channel_list_updated"
 LOGO = "https://tvpdotcomdynamiclogopus.samsungcloud.tv/resize?url=atk.png&h=250"
 
 
@@ -285,6 +286,7 @@ async def test_disabled_never_downloads_and_has_no_button(hass, setup, tv, samsu
     await hass.async_block_till_done(wait_background_tasks=True)
     assert samsung["calls"] == []
     assert hass.states.get(BUTTON) is None
+    assert hass.states.get(UPDATED) is None
     # Built-in U.S. names still apply.
     assert (
         hass.states.get(PLAYER).attributes["media_title"]
@@ -562,3 +564,69 @@ async def test_saved_list_not_used_after_turning_download_off(
     tv.ipc_channel = "2110"
     await refresh(hass, entry)
     assert hass.states.get(PLAYER).attributes.get("entity_picture") is None
+
+
+async def test_updated_sensor_shows_when_the_list_was_downloaded(
+    hass, setup, tv, entry, samsung
+):
+    from homeassistant.const import EntityCategory
+    from homeassistant.helpers import entity_registry as er
+
+    on_samsung_tv(tv)
+    samsung["error"] = "cannot_connect"
+    await setup(
+        options={"channel_list_download": True, "channel_list_region": "US"},
+        ip_control=True,
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    state = hass.states.get(UPDATED)
+    assert state.state == "unknown"  # nothing downloaded yet
+    assert state.attributes["device_class"] == "timestamp"
+    assert state.attributes["last_error"] == "cannot_connect"
+    assert (
+        er.async_get(hass).async_get(UPDATED).entity_category
+        == EntityCategory.DIAGNOSTIC
+    )
+
+    samsung["error"] = None
+    await hass.services.async_call(
+        "button", "press", {"entity_id": BUTTON}, blocking=True
+    )
+    await hass.async_block_till_done()
+    state = hass.states.get(UPDATED)
+    assert state.state == "2026-10-23T18:00:00+00:00"
+    assert state.attributes["country"] == "United States"
+    assert state.attributes["channels"] == 2
+    assert state.attributes["last_error"] is None
+
+    # A failed update keeps the time of the list still in use.
+    samsung["error"] = "no_lineup"
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(
+            "button", "press", {"entity_id": BUTTON}, blocking=True
+        )
+    await hass.async_block_till_done()
+    state = hass.states.get(UPDATED)
+    assert state.state == "2026-10-23T18:00:00+00:00"
+    assert state.attributes["last_error"] == "no_lineup"
+
+
+async def test_updated_sensor_ignores_another_countrys_list(
+    hass, setup, tv, entry, samsung, hass_storage
+):
+    on_samsung_tv(tv)
+    hass_storage[f"{DOMAIN}.channels.{entry.entry_id}"] = {
+        "version": 1,
+        "key": f"{DOMAIN}.channels.{entry.entry_id}",
+        "data": US,
+    }
+    samsung["error"] = "cannot_connect"
+    await setup(
+        options={"channel_list_download": True, "channel_list_region": "GB"},
+        ip_control=True,
+    )
+    await hass.async_block_till_done(wait_background_tasks=True)
+    state = hass.states.get(UPDATED)
+    assert state.state == "unknown"
+    assert state.attributes["country"] == "United Kingdom"
+    assert state.attributes["channels"] == 0

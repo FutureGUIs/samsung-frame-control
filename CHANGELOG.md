@@ -3,6 +3,14 @@
 Newest first. Measurements refer to the author's QN55LS03T (2020 Frame) unless
 noted. Technical validation for each release is in [VALIDATION.md](VALIDATION.md).
 
+## 2.8.3 — Channel list updated sensor
+
+- **Channel list updated** sensor (diagnostic, timestamp): when the
+  Samsung TV Plus list in use was downloaded, shown as "x days ago" on the
+  device page. Attributes: country, channels, last_error (a failed update
+  keeps the previous time). Created when downloading is enabled; unknown until
+  a list for the chosen country has been downloaded.
+
 ## 2.8.2 — Log of unexplained Art Mode exits; button icon
 
 - **Art Mode exit log:** when the TV leaves Art Mode without a command from

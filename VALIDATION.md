@@ -1,3 +1,15 @@
+# Validation for version 2.8.3
+
+Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:
+
+- **321 automated tests passed** (2 new).
+- Requested: a sensor for when the channel list was last downloaded.
+- New tests: the sensor is a diagnostic timestamp, unknown before any
+  download and showing the failed download's error; after Update channel list
+  it shows the list's download time, country and channel count; a later
+  failed update keeps that time and shows the error; a saved list for another
+  country is not shown; no sensor when downloading is disabled.
+
 # Validation for version 2.8.2
 
 Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:

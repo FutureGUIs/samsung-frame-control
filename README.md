@@ -147,7 +147,8 @@ With IP Control paired, on the Samsung TV source:
   downloaded from Samsung for your country (if enabled), then the U.S. list
   built into the integration (`channels_us.json`, used for the United States
   only). **Update channel list** (on the device, when downloading is enabled)
-  downloads it again.
+  downloads it again; the **Channel list updated** sensor shows when it was
+  last downloaded.
 - **Channel** select (`select.frame_tv_channel`): every channel by number and
   name, following the TV. Choosing one types its number on the TV (about 3
   seconds) and confirms the change.
@@ -179,6 +180,7 @@ or, without downloading, wait for the built-in list to be updated in a release
 | Current artwork sensor | Content ID of the piece on screen, with mat and category |
 | Channel select | Samsung TV channel by number and name (with IP Control) |
 | Update channel list button | Downloads the Samsung TV Plus list again (when downloading is enabled) |
+| Channel list updated sensor | When the Samsung TV Plus list in use was downloaded, with country, channel count and last error (diagnostic; when downloading is enabled) |
 | Activity sensor | What a running command is doing: Waking TV, Starting Art app, Switching input, Changing channel, … then Idle |
 | Art brightness, color temperature, motion sensitivity numbers | Ranges as reported by the TV |
 | Art automatic brightness switch | The TV's Art brightness sensor |
