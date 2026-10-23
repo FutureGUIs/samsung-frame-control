@@ -1,3 +1,45 @@
+# Validation for version 2.8.0
+
+Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:
+
+- **305 automated tests passed** (25 new). 23 of 24 full runs passed; one
+  run had a single failure that did not recur in the next 20 runs and could
+  not be identified (see also the unexplained run noted for 2.6.1).
+- Samsung's channel API, observed in a browser on samsung.com/us/tvs/
+  smart-tv/samsung-tv-plus: `tvplusGenre`, `tvplusGenreOrder` and
+  `tvplusApp?genre=…` per genre on vdapi.samsung.com, each with `country=`.
+  Fields per channel: CHANNELNUMBER, CHANNELNAME, GENRENAME, LOGOURL,
+  DESCRIPTION, CHANNELID, HIDE. Line-ups for 25 of 31 countries tried (none
+  for AR, CL, CO, JP, PE, PL); sampled countries all number their channels.
+- On the user's network, `tools/frame_probe.py channels US`: the API answered
+  plain Python, a Home Assistant user agent and a browser agent alike
+  (HTTP 200, 0.7–0.9 s); 591 channels in 20 genres, all numbered, none hidden,
+  listed total 591; 16 s when read one genre at a time.
+- New tests: downloader against Home Assistant's mocked web client (genre
+  order applied, hidden and unnumbered channels skipped, only https logos,
+  first listing of a number kept, sorted, genres fetched together; no line-up,
+  short list, HTTP error, bad JSON and timeout each refused; missing genre
+  order tolerated); first setup downloads in the background and saves; a saved
+  list is reused; a new country downloads; disabled means no download and no
+  button; installs from before 2.8.0 default to off; built-in U.S. names are
+  not used for another country; a saved list of another country, or after
+  turning the download off, is not used; a failed first download logs, keeps
+  the built-in list and shows the error on the button; the button downloads
+  again and keeps the previous list on failure; the channel logo is the
+  player's picture through Home Assistant's image proxy; no logo without the
+  download; browse follows Samsung's genre order with logos; the saved list is
+  removed with the device; the setup form offers the download (on) and a
+  country (Home Assistant's own, else U.S.) and saves them as options, not
+  connection data; the options step changes the country and downloads it;
+  diagnostics show the download.
+- Mutation checks (each caught): hidden channels kept; insecure logos kept;
+  short list accepted; genre order ignored; another country's list used;
+  download setting ignored; U.S. names for every country; downloading at
+  every setup; saved list ignored; list not saved; choice not saved as
+  options; home country ignored; no logo picture; no logo hash; no browse
+  thumbnails; button always created; list kept after removal; no update on a
+  failed download.
+
 # Validation for version 2.7.2
 
 Executed October 23, 2026, Python 3.14.6, Home Assistant 2026.10.2:

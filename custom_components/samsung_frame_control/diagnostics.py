@@ -20,6 +20,22 @@ async def async_get_config_entry_diagnostics(hass, entry):
                     getattr(controller, "channel_list", {}).get("channels", {})
                 ),
             },
+            "channel_download": {
+                "enabled": getattr(controller, "channel_download", False),
+                "region": getattr(controller, "channel_region", None),
+                "downloaded_region": (
+                    getattr(controller, "channel_lineup", None) or {}
+                ).get("region"),
+                "downloaded": (getattr(controller, "channel_lineup", None) or {}).get(
+                    "fetched"
+                ),
+                "channels": len(
+                    (getattr(controller, "channel_lineup", None) or {}).get(
+                        "channels", {}
+                    )
+                ),
+                "last_error": getattr(controller, "channel_list_error", None),
+            },
             "explicit_off_reported": controller.off_reported,
             "last_command": dict(getattr(controller, "last_command", {})),
             "remote_connection_open": getattr(

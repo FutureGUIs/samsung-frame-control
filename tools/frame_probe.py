@@ -16,6 +16,10 @@ media player can show it:
   python frame_probe.py thumbnail 192.168.1.50            current artwork
   python frame_probe.py thumbnail 192.168.1.50 MY_F0001   a specific piece
 The first Art channel connection may show an "allow Frame Probe" prompt.
+`channels` reads Samsung's public Samsung TV Plus channel list (the data
+behind samsung.com/us/tvs/smart-tv/samsung-tv-plus) the way Home Assistant
+would, without a browser; it does not contact the TV:
+  python frame_probe.py channels US        any country code, e.g. GB, DE, CA
 `slideshow` is read-only as well: it asks for the slideshow status both ways
 the integration does, waits up to 10 s each and records every Art message:
   python frame_probe.py slideshow 192.168.1.50
@@ -56,7 +60,9 @@ import socket
 import ssl
 import sys
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -1314,6 +1320,85 @@ def cmd_hold_channel(host, targets, idles, gap):
     return 0
 
 
+STVP_API = "https://vdapi.samsung.com/tvs/tvpersonalize/api/tvapps/appserver/"
+# User agents to try: plain Python, Home Assistant's aiohttp, then a browser.
+STVP_AGENTS = (
+    ("python", None),
+    ("home_assistant", "HomeAssistant/2026.10.2 aiohttp/3.13 Python/3.14"),
+    ("browser", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+)
+
+
+def stvp_get(path, agent):
+    headers = {"Accept": "application/json"}
+    if agent:
+        headers["User-Agent"] = agent
+    request = urllib.request.Request(STVP_API + path, headers=headers)
+    started = time.monotonic()
+    with urllib.request.urlopen(request, timeout=20) as response:
+        body = response.read()
+        info = {
+            "status": response.status,
+            "content_type": response.headers.get("Content-Type"),
+            "bytes": len(body),
+            "seconds": round(time.monotonic() - started, 2),
+        }
+    return json.loads(body), info
+
+
+def cmd_channels(country):
+    country = (country or "US").upper()
+    report = {"country": country, "agents": {}}
+    for name, agent in STVP_AGENTS:
+        try:
+            data, info = stvp_get(f"tvplusGenre?country={country}", agent)
+            info["genres"] = len(data.get("tvPlusGenre") or [])
+            report["agents"][name] = info
+        except (urllib.error.URLError, OSError, ValueError) as err:
+            report["agents"][name] = {"error": f"{type(err).__name__}: {err}"}
+        print(f"{name:15s} {report['agents'][name]}")
+    if not any("genres" in v for v in report["agents"].values()):
+        print("Samsung's channel API did not answer outside a browser.")
+        path = HERE / "frame_probe_channels.json"
+        path.write_text(json.dumps(report, indent=2))
+        return 1
+    agent = next(a for n, a in STVP_AGENTS if "genres" in report["agents"][n])
+    genres = stvp_get(f"tvplusGenre?country={country}", agent)[0]["tvPlusGenre"]
+    try:
+        order = stvp_get(f"tvplusGenreOrder?country={country}", agent)[0]
+        report["genre_order"] = [g.get("GENRENAME") for g in order]
+    except (OSError, ValueError) as err:
+        report["genre_order"] = f"error: {err}"
+    channels = {}
+    started = time.monotonic()
+    for genre in genres:
+        name = genre["GENRENAME"]
+        path = (
+            f"tvplusApp?country={country}&genre={urllib.parse.quote(name)}"
+            "&order=asc&offset=0&size=999"
+        )
+        for app in stvp_get(path, agent)[0]:
+            channels.setdefault(app.get("CHANNELNUMBER"), app)
+    report["fetch_all_seconds"] = round(time.monotonic() - started, 2)
+    report["genres"] = len(genres)
+    report["channels"] = len(channels)
+    report["listed_total"] = sum(g.get("GENRENAMECOUNT") or 0 for g in genres)
+    report["without_number"] = sum(1 for n in channels if not n)
+    report["hidden"] = sum(1 for a in channels.values() if a.get("HIDE") != "N")
+    report["fields"] = sorted({k for a in channels.values() for k in a})
+    report["sample"] = [
+        {k: a.get(k) for k in ("CHANNELNUMBER", "CHANNELNAME", "GENRENAME")}
+        for _, a in sorted(channels.items(), key=lambda kv: int(kv[0] or 0))[:5]
+    ]
+    path = HERE / "frame_probe_channels.json"
+    path.write_text(json.dumps(report, indent=2, ensure_ascii=False))
+    print(
+        f"{country}: {report['channels']} channels in {report['genres']} genres, "
+        f"read in {report['fetch_all_seconds']} s. Saved to {path.name}"
+    )
+    return 0
+
+
 def report_channel_test(results, worked):
     results["worked"] = worked
     path = HERE / "frame_probe_channel_test.json"
@@ -1383,10 +1468,11 @@ def main(argv=None):
             "try-channel",
             "time-channel",
             "hold-channel",
+            "channels",
             "key",
         ),
     )
-    parser.add_argument("host", help="TV IP address")
+    parser.add_argument("host", help="TV IP address (channels: country code)")
     parser.add_argument(
         "arg",
         nargs="?",
@@ -1408,6 +1494,8 @@ def main(argv=None):
         "--enter", action="store_true", help="time-channel: press Enter after digits"
     )
     args = parser.parse_args(argv)
+    if args.command == "channels":
+        return cmd_channels(args.host)
     if args.command == "check":
         return cmd_check(args.host)
     if args.command == "pair":

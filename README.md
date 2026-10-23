@@ -3,17 +3,19 @@
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
 [![Validate](https://github.com/FutureGUIs/samsung-frame-control/actions/workflows/validate.yml/badge.svg)](https://github.com/FutureGUIs/samsung-frame-control/actions/workflows/validate.yml)
 
-A Home Assistant integration for the **Samsung Frame TV** that works entirely
-over your local network: no SmartThings account, no cloud service, no other
-integration and no YAML.
+A Home Assistant integration for the **Samsung Frame TV** that controls the TV
+entirely over your local network: no SmartThings account, no cloud service, no
+other integration and no YAML. (Optionally, it downloads the Samsung TV Plus
+channel list for your country from Samsung's public website.)
 
 - **Media player** with power, sources (Art Mode, Samsung TV, HDMI 1–4) and
   volume.
 - **Art Mode:** the artwork on screen as the player's picture, Next/Previous
   artwork, and Play/Pause for the slideshow.
-- **Samsung TV:** the channel number and name (the Samsung TV Plus line-up is
-  built in), a channel selector, browsing channels by genre, and channel
-  up/down.
+- **Samsung TV:** channel number, name and logo, a channel selector,
+  browsing channels by genre, and channel up/down. The Samsung TV Plus channel
+  list for your country can be downloaded from Samsung (optional; a U.S. list
+  is built in).
 - **Art settings:** artwork, brightness, color temperature, motion sensor,
   slideshow and mat controls, discovered from what your TV supports.
 - **Live progress** of slow commands (waking, starting the Art app, switching
@@ -61,7 +63,9 @@ Copy `custom_components/samsung_frame_control` into your Home Assistant
    (the TV may report its Wi-Fi MAC).
 4. Keep the broadcast address `255.255.255.255` unless your network needs a
    subnet broadcast for Wake-on-LAN.
-5. Accept **HA Frame Control** on the TV. More than one prompt can appear.
+5. Choose whether to download the Samsung TV Plus channel list (names, genres
+   and logos) from Samsung, and for which country. You can change this later.
+6. Accept **HA Frame Control** on the TV. More than one prompt can appear.
 
 ### Optional: IP Control (recommended)
 
@@ -94,9 +98,11 @@ Under **Configure**:
 - **Input names:** name or hide Samsung TV and HDMI 1–4. Samsung publishes the
   names you set on the TV only through its cloud, so they cannot be read
   locally. Clear a name to hide that input.
+- **Channel list:** download the Samsung TV Plus channel list from Samsung
+  (on/off) and the country (25 countries).
 - **Channel names:** one per line, for example `2110 = Pluto News`. They take
-  priority over the built-in Samsung TV Plus names and can add channels the
-  line-up does not have (antenna channels, for example).
+  priority over the Samsung TV Plus names and can add channels the list does
+  not have (antenna channels, for example).
 - **Pair IP Control / Remove IP Control pairing.**
 
 ## The media player
@@ -134,9 +140,14 @@ the TV in the latest poll).
 With IP Control paired, on the Samsung TV source:
 
 - The media player shows the channel as *2110 · America's Test Kitchen*, with
-  its genre in the `channel_genre` attribute. Names come from the Samsung TV
-  Plus U.S. line-up shipped with the integration (`channels_us.json`); nothing
-  is fetched online. A channel that is not in it shows its number.
+  its genre in the `channel_genre` attribute and, with the downloaded list,
+  the channel's logo as its picture. A channel that is not in the list shows
+  its number.
+- **Where names come from:** your own channel names first, then the list
+  downloaded from Samsung for your country (if enabled), then the U.S. list
+  built into the integration (`channels_us.json`, used for the United States
+  only). **Update channel list** (on the device, when downloading is enabled)
+  downloads it again.
 - **Channel** select (`select.frame_tv_channel`): every channel by number and
   name, following the TV. Choosing one types its number on the TV (about 3
   seconds) and confirms the change.
@@ -153,9 +164,9 @@ With IP Control paired, on the Samsung TV source:
     media_content_id: "2110"
   ```
 
-Samsung changes the line-up from time to time; the built-in list is updated
-with new releases, and `tools/stvp_channels.py` rebuilds it from Samsung's
-published PDF.
+Samsung changes the line-up from time to time: press **Update channel list**,
+or, without downloading, wait for the built-in list to be updated in a release
+(`tools/stvp_channels.py` rebuilds it from Samsung's published PDF).
 
 ## Other entities
 
@@ -165,6 +176,7 @@ published PDF.
 | Random artwork button | Picks another piece from the catalog |
 | Current artwork sensor | Content ID of the piece on screen, with mat and category |
 | Channel select | Samsung TV channel by number and name (with IP Control) |
+| Update channel list button | Downloads the Samsung TV Plus list again (when downloading is enabled) |
 | Activity sensor | What a running command is doing: Waking TV, Starting Art app, Switching input, Changing channel, … then Idle |
 | Art brightness, color temperature, motion sensitivity numbers | Ranges as reported by the TV |
 | Art automatic brightness switch | The TV's Art brightness sensor |
@@ -243,6 +255,7 @@ python tools/frame_probe.py slideshow 192.168.1.50  # which slideshow request th
 python tools/frame_probe.py try-channel 192.168.1.50 2111  # how the TV accepts a channel number
 python tools/frame_probe.py time-channel 192.168.1.50 2111 --gap 0.5 --enter  # time typed digits
 python tools/frame_probe.py hold-channel 192.168.1.50 1114,2110 --idle 60  # one connection kept open
+python tools/frame_probe.py channels US  # Samsung TV Plus list from Samsung (no TV needed)
 ```
 
 `check`, `pair`, `watch`, `thumbnail` and `slideshow` never change a TV
@@ -253,7 +266,9 @@ file should be treated like a password.
 
 Everything runs on your LAN: the TV's Art and remote WebSocket channels (port
 8002), its REST power status, UPnP RenderingControl (port 9197) for volume,
-Samsung IP Control (port 1516, optional) and Wake-on-LAN. The remote-key
+Samsung IP Control (port 1516, optional) and Wake-on-LAN. The only connection
+outside your network is the optional Samsung TV Plus channel list download
+(and its logos) from Samsung's public website. The remote-key
 connection is kept open between commands (closed when the TV turns off or
 after 15 minutes unused). Power is checked about
 every 15 seconds; Art settings about every 60 seconds; the artwork catalog

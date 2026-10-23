@@ -17,6 +17,7 @@ from pathlib import Path
 from . import upnp
 from .art_controls import STEP_KEYS, ArtControls
 from .async_art import ArtError, AsyncArtClient
+from .channels import ChannelListError, fetch_lineup
 from .const import DEFAULT_BROADCAST, INPUTS, PORT, REPORTED_INPUTS
 from .ipcontrol import IpcError
 from .power import read_power
@@ -235,6 +236,13 @@ class FrameController:
         self.channel = None  # channel number on the TV source, via IP Control
         # Built-in Samsung TV Plus line-up (channels.load_channels), set at setup.
         self.channel_list = {"lineup": None, "effective": None, "channels": {}}
+        # Downloaded line-up (opt-in), its country, and where it is saved.
+        self.channel_download = False
+        self.channel_region = "US"
+        self.channel_lineup = None
+        self.channel_store = None
+        self.channel_list_error = None
+        self._channel_lock = asyncio.Lock()
         # The TV explicitly reported (or HA commanded) power-off since it was
         # last seen on. Only then does a refused connection mean "standby".
         self.off_reported = False
@@ -859,6 +867,27 @@ class FrameController:
                     raise FrameError(code, stage="channel", sent=sent) from None
                 if attempt + 1 == KEY_ATTEMPTS:
                     raise FrameError(code, stage="channel") from None
+
+    async def async_update_channel_list(self) -> None:
+        """Download the chosen country's line-up from Samsung and save it.
+
+        Talks to Samsung's website only, never to the TV; on failure the
+        previous list stays in use.
+        """
+        async with self._channel_lock:
+            try:
+                lineup = await fetch_lineup(self._session, self.channel_region)
+            except ChannelListError as err:
+                self.channel_list_error = err.code
+                if self.on_update:
+                    self.on_update()
+                raise FrameError(err.code, stage="channel_list") from None
+            self.channel_lineup = lineup
+            self.channel_list_error = None
+            if self.channel_store is not None:
+                await self.channel_store.async_save(lineup)
+            if self.on_update:
+                self.on_update()
 
     def thumbnail_unavailable(self, content_id) -> bool:
         """True while a failed thumbnail should not be asked for again."""

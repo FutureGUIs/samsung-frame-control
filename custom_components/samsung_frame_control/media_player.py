@@ -25,8 +25,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .channels import channel_label, channel_names
+from .channels import channel_label, channel_names, downloaded, genre_order
 from .const import (
+    CHANNEL_REGIONS,
     CONF_CHANNEL_NAMES,
     DEFAULT_INPUT_NAMES,
     INPUTS,
@@ -208,14 +209,24 @@ class FrameMediaPlayer(CoordinatorEntity, RestoreEntity, MediaPlayerEntity):
 
     @property
     def media_image_hash(self) -> str | None:
-        content_id = self._artwork()
-        if content_id is None:
+        key = self._artwork() or self._channel_logo()
+        if key is None:
             return None
-        return hashlib.sha256(content_id.encode()).hexdigest()[:16]
+        return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+    def _channel_logo(self) -> str | None:
+        """Logo of the channel on the Samsung TV source (downloaded list)."""
+        number = self._channel()
+        if number is None:
+            return None
+        return self._channels.get(number, {}).get("logo")
 
     async def async_get_media_image(self) -> tuple[bytes | None, str | None]:
         content_id = self._artwork()
         if content_id is None:
+            if logo := self._channel_logo():
+                # Fetched by Home Assistant from Samsung and cached.
+                return await self._async_fetch_image_from_cache(logo)
             return None, None
         image = await self._controller.async_thumbnail(content_id)
         if image is None:
@@ -291,14 +302,19 @@ class FrameMediaPlayer(CoordinatorEntity, RestoreEntity, MediaPlayerEntity):
     ) -> BrowseMedia:
         """Channels by genre, from the built-in line-up and your own names."""
         channels = self._channels
-        genres: dict[str, list[str]] = {}
+        grouped: dict[str, list[str]] = {}
         for number, info in channels.items():
-            genres.setdefault(info.get("genre") or "Other channels", []).append(number)
+            grouped.setdefault(info.get("genre") or "Other channels", []).append(number)
+        # Samsung's own genre order when the list was downloaded.
+        order = [g for g in genre_order(self._controller) if g in grouped]
+        genres = {g: grouped[g] for g in order + [g for g in grouped if g not in order]}
         if media_content_id in (None, "", BROWSE_ROOT):
-            lineup = self._controller.channel_list
             title = "Samsung TV channels"
-            if lineup.get("effective"):
-                title += f" ({lineup['effective']})"
+            if lineup := downloaded(self._controller):
+                region = lineup.get("region")
+                title += f" ({CHANNEL_REGIONS.get(region, region)})"
+            elif effective := self._controller.channel_list.get("effective"):
+                title += f" ({effective})"
             return BrowseMedia(
                 media_class=MediaClass.DIRECTORY,
                 media_content_id=BROWSE_ROOT,
@@ -336,6 +352,7 @@ class FrameMediaPlayer(CoordinatorEntity, RestoreEntity, MediaPlayerEntity):
                     media_content_id=number,
                     media_content_type=MediaType.CHANNEL,
                     title=channel_label(number, channels),
+                    thumbnail=channels[number].get("logo"),
                     can_play=True,
                     can_expand=False,
                 )

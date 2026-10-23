@@ -9,7 +9,12 @@
           "name": "Device name",
           "host": "TV IP address or hostname",
           "mac": "MAC address override (optional)",
-          "broadcast_address": "Wake On Lan Broadcast Address"
+          "broadcast_address": "Wake On Lan Broadcast Address",
+          "channel_list_download": "Download Samsung TV Plus channel names and logos from Samsung",
+          "channel_list_region": "Channel list country"
+        },
+        "data_description": {
+          "channel_list_download": "Uses Samsung's public Samsung TV Plus website (no account) to name channels and show their logos. The TV itself is always controlled locally. You can change this later under Configure > Channel list."
         }
       },
       "reconfigure": {
@@ -27,7 +32,12 @@
           "name": "Device name",
           "host": "TV IP address or hostname",
           "mac": "MAC address override (optional)",
-          "broadcast_address": "Wake On Lan Broadcast Address"
+          "broadcast_address": "Wake On Lan Broadcast Address",
+          "channel_list_download": "Download Samsung TV Plus channel names and logos from Samsung",
+          "channel_list_region": "Channel list country"
+        },
+        "data_description": {
+          "channel_list_download": "Uses Samsung's public Samsung TV Plus website (no account) to name channels and show their logos. The TV itself is always controlled locally. You can change this later under Configure > Channel list."
         }
       }
     },
@@ -53,6 +63,7 @@
         "title": "Samsung Frame Control options",
         "menu_options": {
           "inputs": "Input names",
+          "channel_list": "Channel list (Samsung TV Plus)",
           "channels": "Channel names",
           "ip_control_pair": "Pair IP Control (read the current input)",
           "ip_control_unpair": "Remove IP Control pairing"
@@ -79,9 +90,17 @@
       },
       "channels": {
         "title": "Channel names",
-        "description": "With IP Control paired, the media player shows the channel number while the Samsung TV source is on (for example Samsung TV Plus). The TV does not report channel names locally, so you can add them here, one per line, for example:\n\n2110 = Pluto News\n2111 = Movies\n\nChannels without a name show their number.",
+        "description": "With IP Control paired, the media player shows the channel while the Samsung TV source is on. Names come from the Samsung TV Plus channel list; names you add here take priority, and can name channels the list does not have (antenna channels, for example). One per line:\n\n2110 = Pluto News\n2111 = Movies",
         "data": {
           "channel_names": "Channels"
+        }
+      },
+      "channel_list": {
+        "title": "Samsung TV Plus channel list",
+        "description": "Download the channel names, genres and logos for your country from Samsung's public Samsung TV Plus website (no account needed). It is downloaded now, when you change the country, and when you press Update channel list on the device. Turn it off to use only the built-in U.S. names and your own channel names; the TV itself is always controlled locally.",
+        "data": {
+          "channel_list_download": "Download Samsung TV Plus channel names and logos from Samsung",
+          "channel_list_region": "Channel list country"
         }
       }
     },

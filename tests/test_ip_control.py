@@ -356,7 +356,12 @@ async def test_unpair_removes_token_and_repair_issue(hass, setup, tv, entry):
 async def test_unpair_only_offered_when_paired(hass, setup, entry):
     await setup()
     result = await hass.config_entries.options.async_init(entry.entry_id)
-    assert result["menu_options"] == ["inputs", "channels", "ip_control_pair"]
+    assert result["menu_options"] == [
+        "inputs",
+        "channel_list",
+        "channels",
+        "ip_control_pair",
+    ]
 
 
 # -- power-off ------------------------------------------------------------

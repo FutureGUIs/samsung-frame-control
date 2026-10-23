@@ -3,6 +3,31 @@
 Newest first. Measurements refer to the author's QN55LS03T (2020 Frame) unless
 noted. Technical validation for each release is in [VALIDATION.md](VALIDATION.md).
 
+## 2.8.0 — Samsung TV Plus channel list by country, with logos
+
+- **Download from Samsung (optional):** when adding a TV, choose whether to
+  download the Samsung TV Plus channel list from Samsung's public website and
+  for which country (25 countries; the default is Home Assistant's own
+  country, else the United States). It is the same data Samsung's Samsung TV
+  Plus page shows: number, name, genre and logo for every channel (591 for the
+  U.S., including channels the PDF leaves out). Change it later under
+  **Configure → Channel list**. TVs added before 2.8.0 start with the download
+  off.
+- **When it downloads:** at first setup, when the country changes, and with
+  the new **Update channel list** button (shows the country, channel count,
+  download time and last error). It runs in the background; if it fails, the
+  previous or built-in list stays in use. The list is saved in Home
+  Assistant's storage and removed with the device.
+- **Channel logo** as the media player's picture on the Samsung TV source,
+  and logos plus Samsung's genre order in **Browse media**.
+- **Which names apply:** your own channel names, then the downloaded list for
+  the chosen country, then the built-in U.S. list (only when the country is
+  the United States).
+- Measured from the user's network with `tools/frame_probe.py channels US`:
+  Samsung's API answers without a browser (plain Python, Home Assistant's
+  client and a browser agent alike, 0.7–0.9 s per request); 591 channels in
+  20 genres, all numbered. The integration requests the genres five at a time.
+
 ## 2.7.2 — Remote connection kept open
 
 The remote-key connection (channel numbers, channel up/down, input and

@@ -8,14 +8,26 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST, CONF_MAC, CONF_NAME, CONF_TOKEN
 from homeassistant.core import callback
-from homeassistant.helpers.selector import TextSelector, TextSelectorConfig
+from homeassistant.helpers.selector import (
+    BooleanSelector,
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+)
 
 from .const import (
+    CHANNEL_REGIONS,
     CONF_BROADCAST,
+    CONF_CHANNEL_DOWNLOAD,
     CONF_CHANNEL_NAMES,
+    CONF_CHANNEL_REGION,
     CONF_IPC_PORT,
     CONF_IPC_TOKEN,
     DEFAULT_BROADCAST,
+    DEFAULT_CHANNEL_REGION,
     DEFAULT_INPUT_NAMES,
     DEFAULT_NAME,
     DOMAIN,
@@ -23,6 +35,33 @@ from .const import (
 )
 from .frame import FrameError, normalize_mac, port_open, run_worker
 from .ipcontrol import PORTS, IpcError, IpControl
+
+CHANNEL_FIELDS = (CONF_CHANNEL_DOWNLOAD, CONF_CHANNEL_REGION)
+
+
+def default_region(hass) -> str:
+    """Home Assistant's own country when Samsung has a line-up for it."""
+    country = str(getattr(hass.config, "country", None) or "").upper()
+    return country if country in CHANNEL_REGIONS else DEFAULT_CHANNEL_REGION
+
+
+def region_selector():
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=[
+                SelectOptionDict(value=code, label=f"{name} ({code})")
+                for code, name in sorted(CHANNEL_REGIONS.items(), key=lambda kv: kv[1])
+            ],
+            mode=SelectSelectorMode.DROPDOWN,
+        )
+    )
+
+
+def channel_schema(download, region):
+    return {
+        vol.Required(CONF_CHANNEL_DOWNLOAD, default=download): BooleanSelector(),
+        vol.Required(CONF_CHANNEL_REGION, default=region): region_selector(),
+    }
 
 
 class FrameConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -92,6 +131,10 @@ class FrameConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             defaults.update(user_input)
             data = dict(user_input)
+            # Integration options, not connection data.
+            channel_options = {
+                key: data.pop(key) for key in CHANNEL_FIELDS if key in data
+            }
             if entry:
                 data[CONF_MAC] = entry.data[CONF_MAC]
                 data[CONF_NAME] = entry.title
@@ -146,7 +189,9 @@ class FrameConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             entry, data_updates=data, reason="reconfigure_successful"
                         )
                     return self.async_create_entry(
-                        title=data[CONF_NAME].strip() or DEFAULT_NAME, data=data
+                        title=data[CONF_NAME].strip() or DEFAULT_NAME,
+                        data=data,
+                        options=channel_options,
                     )
                 except FrameError as err:
                     errors["base"] = (
@@ -169,6 +214,10 @@ class FrameConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ): str,
                 vol.Optional(CONF_MAC, default=defaults.get(CONF_MAC, "")): str,
                 **schema,
+                **channel_schema(
+                    defaults.get(CONF_CHANNEL_DOWNLOAD, True),
+                    defaults.get(CONF_CHANNEL_REGION, default_region(self.hass)),
+                ),
             }
         return self.async_show_form(
             step_id="reconfigure"
@@ -185,7 +234,7 @@ class FrameOptionsFlow(config_entries.OptionsFlowWithReload):
     """Input names, and optional IP Control pairing for the observed input."""
 
     async def async_step_init(self, user_input=None):
-        options = ["inputs", "channels", "ip_control_pair"]
+        options = ["inputs", "channel_list", "channels", "ip_control_pair"]
         if self.config_entry.data.get(CONF_IPC_TOKEN):
             options.append("ip_control_unpair")
         return self.async_show_menu(step_id="init", menu_options=options)
@@ -220,6 +269,25 @@ class FrameOptionsFlow(config_entries.OptionsFlowWithReload):
             }
         )
         return self.async_show_form(step_id="inputs", data_schema=schema, errors=errors)
+
+    async def async_step_channel_list(self, user_input=None):
+        """Download Samsung TV Plus channel names and logos, and for where."""
+        if user_input is not None:
+            return self.async_create_entry(
+                data={
+                    **self.config_entry.options,
+                    CONF_CHANNEL_DOWNLOAD: bool(user_input[CONF_CHANNEL_DOWNLOAD]),
+                    CONF_CHANNEL_REGION: user_input[CONF_CHANNEL_REGION],
+                }
+            )
+        options = self.config_entry.options
+        schema = vol.Schema(
+            channel_schema(
+                bool(options.get(CONF_CHANNEL_DOWNLOAD, False)),
+                options.get(CONF_CHANNEL_REGION, default_region(self.hass)),
+            )
+        )
+        return self.async_show_form(step_id="channel_list", data_schema=schema)
 
     async def async_step_channels(self, user_input=None):
         """Names for channel numbers reported on the Samsung TV source."""
